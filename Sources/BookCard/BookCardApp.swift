@@ -21,28 +21,28 @@ struct ContentView: View {
             if !store.hasKey && store.cache.books.isEmpty { KeyView(initial: true) }
             else {
                 VStack(spacing: 0) {
-                    HStack {
-                        Text("BookCard").font(.title2.bold())
-                        Spacer()
+                    HStack(spacing: 16) {
+                        Picker("导航", selection: $tab) {
+                            Text("我读过的书").tag(LibraryTab.books)
+                            Text("我的笔记").tag(LibraryTab.notes)
+                        }.pickerStyle(.segmented).labelsHidden().frame(width: 280)
+                        Spacer(minLength: 12)
+                        SyncStatusView(tab: tab).frame(maxWidth: 360, alignment: .trailing)
                         Menu {
                             Button("更换 Key") { store.showKey = true }
                             Button("移除 Key（保留离线数据）") { store.removeKey() }.disabled(!store.hasKey)
                             Button("清除所有本地数据…", role: .destructive) { confirmDelete = true }
-                        } label: { Image(systemName: "gearshape") }.disabled(store.busy)
-                    }.padding()
-                    TabView(selection: $tab) {
-                        ReadingBooksView().tabItem { Label("我读过的书", systemImage: "book.closed") }.tag(LibraryTab.books)
-                        AllNotesView().tabItem { Label("我的笔记", systemImage: "quote.bubble") }.tag(LibraryTab.notes)
-                    }
-                    VStack(alignment: .leading, spacing: 6) {
-                        if store.busy { HStack { ProgressView().controlSize(.small); Text(store.status) } }
-                        if !store.hasKey { HStack { Text("离线模式"); Button("输入 Key") { store.showKey = true } } }
-                        if let error = store.error {
-                            HStack(alignment: .top) { Text(error).foregroundStyle(.red).textSelection(.enabled); Spacer(); Button("关闭") { store.error = nil } }
-                        }
-                        let date = tab == .notes ? store.cache.notesSynced : store.cache.readingSynced
-                        if let date { Text("本页最近完整同步：\(date.formatted(date: .abbreviated, time: .shortened))").foregroundStyle(.secondary) }
-                    }.font(.caption).padding(10).frame(maxWidth: .infinity, alignment: .leading).background(.bar)
+                        } label: { Label("设置", systemImage: "gearshape").labelStyle(.iconOnly) }
+                            .menuStyle(.borderlessButton).fixedSize().disabled(store.busy)
+                    }.padding(.horizontal, 24).padding(.vertical, 14).background(.bar)
+                    Divider()
+                    // Keep both pages mounted so switching tabs preserves their local state.
+                    ZStack {
+                        ReadingBooksView().opacity(tab == .books ? 1 : 0)
+                            .allowsHitTesting(tab == .books).disabled(tab != .books).accessibilityHidden(tab != .books)
+                        AllNotesView().opacity(tab == .notes ? 1 : 0)
+                            .allowsHitTesting(tab == .notes).disabled(tab != .notes).accessibilityHidden(tab != .notes)
+                    }.frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
         }
@@ -59,6 +59,40 @@ struct ContentView: View {
                 }
             } catch { }
         }
+    }
+}
+struct SyncStatusView: View {
+    @EnvironmentObject var store: AppStore
+    let tab: LibraryTab
+    @State private var showError = false
+    var syncDate: Date? { tab == .notes ? store.cache.notesSynced : store.cache.readingSynced }
+    var body: some View {
+        HStack(spacing: 10) {
+            if store.busy {
+                ProgressView().controlSize(.small)
+                Text(store.status).lineLimit(1).truncationMode(.middle).help(store.status)
+            } else if !store.hasKey {
+                Text("离线模式").foregroundStyle(.secondary)
+                Button("输入 Key") { store.showKey = true }
+            } else if let date = syncDate {
+                Text("已同步 · \(date.formatted(date: .omitted, time: .shortened))")
+                    .foregroundStyle(.secondary).lineLimit(1)
+                    .help("本页最近完整同步：\(date.formatted(date: .abbreviated, time: .shortened))")
+            } else { Text("尚未完成同步").foregroundStyle(.secondary).lineLimit(1) }
+            if let error = store.error {
+                Button { showError = true } label: {
+                    Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red)
+                }.buttonStyle(.plain).accessibilityLabel("查看同步错误").help("查看同步错误")
+                    .popover(isPresented: $showError) {
+                        VStack(alignment: .leading, spacing: 14) {
+                            Text("同步异常").font(.headline)
+                            ScrollView { Text(error).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
+                                .frame(maxHeight: 220)
+                            HStack { Spacer(); Button("关闭提示") { store.error = nil; showError = false } }
+                        }.padding(20).frame(width: 380)
+                    }
+            }
+        }.font(.caption)
     }
 }
 struct ReadingBooksView: View {
