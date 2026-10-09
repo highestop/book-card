@@ -1,0 +1,37 @@
+# Build outputs and package/editor state
+.build/
+build/
+.swiftpm/
+DerivedData/
+*.app/
+*.dSYM/
+*.xcuserstate
+xcuserdata/
+.vscode/
+.idea/
+.DS_Store
+
+# Local tooling and configuration
+.agents/
+.codex/
+.env
+.env.*
+*.local
+*.local.*
+
+# Credentials and signing material
+*.pem
+*.key
+*.p12
+*.pfx
+*.mobileprovision
+*.keychain
+*.keychain-db
+
+# Personal data, exports, and diagnostics
+cache/
+data/
+raw/
+exports/
+snapshots/
+*.log
