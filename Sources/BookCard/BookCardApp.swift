@@ -67,7 +67,11 @@ struct ContentView: View {
 struct ReadingBooksView: View {
     @EnvironmentObject var store: AppStore
     @State private var search = ""
-    @AppStorage("readingBookSort") private var sort: BookSort = .progressDescending
+    @AppStorage("readingBookSort") private var storedSort = BookSort.progressDescending.rawValue
+    var sort: BookSort { BookSort.restored(storedSort) }
+    var sortSelection: Binding<BookSort> {
+        Binding(get: { sort }, set: { storedSort = $0.rawValue })
+    }
     var books: [Book] {
         store.cache.sortedBooks(by: sort).filter { search.isEmpty || $0.title.localizedCaseInsensitiveContains(search) || $0.author.localizedCaseInsensitiveContains(search) }
     }
@@ -82,7 +86,7 @@ struct ReadingBooksView: View {
             HStack {
                 Text("展示书架和笔记本中的全部书籍，包含未读、在读和已读完。").font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                Picker("排序", selection: $sort) { ForEach(BookSort.allCases) { Text($0.rawValue).tag($0) } }.frame(width: 260)
+                Picker("排序", selection: sortSelection) { ForEach(BookSort.allCases) { Text($0.rawValue).tag($0) } }.frame(width: 260)
             }
             if books.isEmpty {
                 ContentUnavailableView(store.busy ? "正在读取书籍…" : "暂无匹配的书籍", systemImage: "book.closed", description: Text("刷新获取书籍，或尝试其他搜索词。"))
@@ -95,7 +99,7 @@ struct ReadingBooksView: View {
                             if !book.author.isEmpty { Text(book.author).foregroundStyle(.secondary) }
                             if let progress = store.cache.reading?[book.id] {
                                 HStack {
-                                    Text(durationLabel(progress)).help("当前进度接口的时长字段可能返回 0；有阅读进度时不将它视为实际阅读时长。")
+                                    if let duration = durationLabel(progress) { Text(duration) }
                                     if let time = progress.finishedAt, time > 0 { Text("读完于 \(Date(timeIntervalSince1970: time).formatted(date: .abbreviated, time: .omitted))") }
                                     if let time = progress.updatedAt, time > 0 { Text("最近阅读 \(Date(timeIntervalSince1970: time).formatted(date: .abbreviated, time: .omitted))") }
                                 }.font(.caption).foregroundStyle(.secondary)

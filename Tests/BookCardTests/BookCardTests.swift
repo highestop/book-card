@@ -219,10 +219,11 @@ func testBookSortingAndUnavailableDuration() {
     ])
     XCTAssertEqual(cache.sortedBooks(by: .progressDescending).map(\.id), ["a", "b", "c", "d"])
     XCTAssertEqual(cache.sortedBooks(by: .progressAscending).map(\.id), ["c", "b", "a", "d"])
-    XCTAssertEqual(cache.sortedBooks(by: .recentlyRead).map(\.id), ["b", "a", "c", "d"])
-    XCTAssertEqual(cache.sortedBooks(by: .duration).first?.id, "b")
-    XCTAssertEqual(cache.sortedBooks(by: .title).map(\.id), ["a", "b", "c", "d"])
-    XCTAssertEqual(durationLabel(cache.reading!["a"]!), "暂无有效阅读时长")
+    XCTAssertEqual(BookSort.allCases.count, 2)
+    XCTAssertEqual(BookSort.restored("最近阅读"), .progressDescending)
+    XCTAssertEqual(BookSort.restored("阅读进度：从低到高"), .progressAscending)
+    XCTAssertNil(durationLabel(cache.reading!["a"]!))
+    XCTAssertNil(durationLabel(cache.reading!["c"]!))
     XCTAssertEqual(durationLabel(cache.reading!["b"]!), "阅读时长 42 秒")
 }
 
