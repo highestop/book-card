@@ -24,9 +24,6 @@ struct ContentView: View {
                     HStack {
                         Text("BookCard").font(.title2.bold())
                         Spacer()
-                        Button { Task { await store.refresh(notes: tab == .notes) } } label: {
-                            Label("刷新当前页", systemImage: "arrow.clockwise")
-                        }.disabled(store.busy || !store.hasKey)
                         Menu {
                             Button("更换 Key") { store.showKey = true }
                             Button("移除 Key（保留离线数据）") { store.removeKey() }.disabled(!store.hasKey)
@@ -89,7 +86,7 @@ struct ReadingBooksView: View {
                 Picker("排序", selection: sortSelection) { ForEach(BookSort.allCases) { Text($0.rawValue).tag($0) } }.frame(width: 260)
             }
             if books.isEmpty {
-                ContentUnavailableView(store.busy ? "正在读取书籍…" : "暂无匹配的书籍", systemImage: "book.closed", description: Text("刷新获取书籍，或尝试其他搜索词。"))
+                ContentUnavailableView(store.busy ? "正在读取书籍…" : "暂无匹配的书籍", systemImage: "book.closed", description: Text("首次进入会自动同步，也可以尝试其他搜索词。"))
             } else {
                 List(books) { book in
                     HStack(alignment: .top, spacing: 18) {
@@ -177,7 +174,7 @@ struct SourceNotesView: View {
                 TextField("搜索笔记或\(book.official ? "文章" : "章节")", text: $search).textFieldStyle(.roundedBorder)
             }
             if store.cache.details[book.id] == nil {
-                ContentUnavailableView(store.busy ? "正在同步，请稍候…" : "尚未同步该来源", systemImage: "arrow.clockwise", description: Text("点击刷新当前页，读取所有笔记来源。"))
+                ContentUnavailableView(store.busy ? "正在同步，请稍候…" : "尚未同步该来源", systemImage: "arrow.clockwise", description: Text("当前尚无该来源的缓存笔记。"))
             } else if groups.isEmpty {
                 ContentUnavailableView("暂无匹配笔记", systemImage: "quote.bubble", description: Text("试试其他关键词或笔记类型。"))
             } else {
