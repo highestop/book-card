@@ -97,13 +97,11 @@ struct ReadingProgress: Codable {
 enum BookSort: String, CaseIterable, Identifiable {
     case progressDescending = "阅读进度：从高到低"
     case progressAscending = "阅读进度：从低到高"
-    case recentlyRead = "最近阅读"
-    case duration = "阅读时长：从长到短"
-    case title = "书名"
     var id: String { rawValue }
+    static func restored(_ value: String) -> BookSort { BookSort(rawValue: value) ?? .progressDescending }
 }
-func durationLabel(_ progress: ReadingProgress) -> String {
-    guard let seconds = progress.seconds, seconds >= 0, seconds > 0 || progress.percent == 0 else { return "暂无有效阅读时长" }
+func durationLabel(_ progress: ReadingProgress) -> String? {
+    guard let seconds = progress.seconds, seconds > 0 else { return nil }
     if seconds < 60 { return "阅读时长 \(seconds) 秒" }
     return "阅读时长 \(seconds / 3600) 小时 \((seconds % 3600) / 60) 分钟"
 }
@@ -128,16 +126,7 @@ struct Cache: Codable {
                 if let lhs, let rhs, lhs != rhs { return ascending ? lhs < rhs : lhs > rhs }
                 return nil
             }
-            var order: Bool?
-            switch sort {
-            case .progressDescending, .progressAscending:
-                order = compare(left.map { Double($0.percent) }, right.map { Double($0.percent) }, ascending: sort == .progressAscending)
-            case .recentlyRead:
-                order = compare(left?.updatedAt, right?.updatedAt)
-            case .duration:
-                order = compare(left?.seconds.flatMap { $0 > 0 ? Double($0) : nil }, right?.seconds.flatMap { $0 > 0 ? Double($0) : nil })
-            case .title: break
-            }
+            let order = compare(left.map { Double($0.percent) }, right.map { Double($0.percent) }, ascending: sort == .progressAscending)
             if let order { return order }
             let names = a.title.localizedStandardCompare(b.title)
             return names == .orderedSame ? a.id < b.id : names == .orderedAscending
