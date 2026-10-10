@@ -1,17 +1,6 @@
 import Foundation
-
-// Lightweight assertions allow running the contract suite with Command Line Tools alone.
-class XCTestCase {}
-func XCTFail(_ message: String, file: StaticString = #file, line: UInt = #line) -> Never { fatalError(message, file: file, line: line) }
-func XCTAssertTrue(_ value: Bool) { if !value { XCTFail("Expected true") } }
-func XCTAssertFalse(_ value: Bool) { XCTAssertTrue(!value) }
-func XCTAssertNil<T>(_ value: T?) { XCTAssertTrue(value == nil) }
-func XCTAssertEqual<T: Equatable>(_ a: T, _ b: T) { if a != b { XCTFail("Values differ") } }
-func XCTAssertNotEqual<T: Equatable>(_ a: T, _ b: T) { if a == b { XCTFail("Values unexpectedly equal") } }
-func XCTAssertThrowsError<T>(_ expression: @autoclosure () throws -> T) {
-    do { _ = try expression() } catch { return }
-    XCTFail("Expected an error")
-}
+import XCTest
+@testable import BookCardCore
 
 final class BookCardTests: XCTestCase {
     func testGatewayRejectsHTTPBusinessAndUpgradeErrors() throws {
@@ -170,7 +159,7 @@ final class SyncTests: XCTestCase {
                 return ["updated": [["bookmarkId": "MP_WXS_test_article_A_10-20", "range": "10-20", "markText": "quote"]]]
             case "/review/list/mine":
                 return ["reviews": [["review": ["reviewId": "r", "content": "thought", "refMpInfo": ["reviewId": "MP_WXS_test_article_A", "title": "文章标题"]]]], "totalCount": 1, "hasMore": 0]
-            default: XCTFail("Notes must not request reading progress")
+            default: throw AppError("Notes must not request reading progress")
             }
         }
         let detail = try await api.detail(Book(id: "MP_WXS_test", title: "公众号", author: "", highlights: 1, thoughts: 1, recent: 0))
@@ -191,60 +180,40 @@ final class SyncTests: XCTestCase {
     }
 }
 
-func testArticleTitleParsingAndCacheFallback() async throws {
-    XCTAssertEqual(ArticleTitles.parse("<meta content='标题 &amp; &#x4e2d;文 &quot;引用&quot;' property='og:title'>"), "标题 & 中文 \"引用\"")
-    XCTAssertNil(ArticleTitles.parse("<html><title>环境异常</title></html>"))
-    XCTAssertEqual(ArticleTitles.publicURL("abc~def")?.absoluteString, "https://mp.weixin.qq.com/s/abc_def")
-    let note = Note(id: "h", kind: "划线", quote: "原文", chapter: "文章 abc", created: nil, sectionID: "abc")
-    let detail = BookDetail(notes: [note], synced: Date())
-    var calls = 0
-    let enriched = try await ArticleTitles.enrich(detail, previous: nil) { id in
-        calls += 1; XCTAssertEqual(id, "abc"); return "真实文章标题"
+final class QueryTests: XCTestCase {
+    func testArticleTitleParsingAndCacheFallback() async throws {
+        XCTAssertEqual(ArticleTitles.parse("<meta content='标题 &amp; &#x4e2d;文 &quot;引用&quot;' property='og:title'>"), "标题 & 中文 \"引用\"")
+        XCTAssertNil(ArticleTitles.parse("<html><title>环境异常</title></html>"))
+        XCTAssertEqual(ArticleTitles.publicURL("abc~def")?.absoluteString, "https://mp.weixin.qq.com/s/abc_def")
+        let note = Note(id: "h", kind: "划线", quote: "原文", chapter: "文章 abc", created: nil, sectionID: "abc")
+        let detail = BookDetail(notes: [note], synced: Date())
+        var calls = 0
+        let enriched = try await ArticleTitles.enrich(detail, previous: nil) { id in
+            calls += 1; XCTAssertEqual(id, "abc"); return "真实文章标题"
+        }
+        XCTAssertEqual(enriched.notes.first?.chapter, "真实文章标题")
+        XCTAssertEqual(calls, 1)
+        let cached = try await ArticleTitles.enrich(detail, previous: enriched) { _ in XCTFail("Cached title must not require network"); return nil }
+        XCTAssertEqual(cached.notes.first?.chapter, "真实文章标题")
+        let failed = try await ArticleTitles.enrich(detail, previous: nil) { _ in nil }
+        XCTAssertEqual(failed.notes.first?.chapter, "文章（标题暂缺）")
+        XCTAssertEqual(failed.notes.first?.quote, "原文")
     }
-    XCTAssertEqual(enriched.notes.first?.chapter, "真实文章标题")
-    XCTAssertEqual(calls, 1)
-    let cached = try await ArticleTitles.enrich(detail, previous: enriched) { _ in XCTFail("Cached title must not require network") }
-    XCTAssertEqual(cached.notes.first?.chapter, "真实文章标题")
-    let failed = try await ArticleTitles.enrich(detail, previous: nil) { _ in nil }
-    XCTAssertEqual(failed.notes.first?.chapter, "文章（标题暂缺）")
-    XCTAssertEqual(failed.notes.first?.quote, "原文")
-}
 
-func testBookSortingAndUnavailableDuration() {
-    let books = ["a", "b", "c", "d"].map { Book(id: $0, title: $0, author: "", recent: 999) }
-    let cache = Cache(books: books, reading: [
-        "a": ReadingProgress(percent: 100, seconds: 0, synced: Date(), updatedAt: 10),
-        "b": ReadingProgress(percent: 25, seconds: 42, synced: Date(), updatedAt: 20),
-        "c": ReadingProgress(percent: 0, seconds: 0, synced: Date())
-    ])
-    XCTAssertEqual(cache.sortedBooks(by: .progressDescending).map(\.id), ["a", "b", "c", "d"])
-    XCTAssertEqual(cache.sortedBooks(by: .progressAscending).map(\.id), ["c", "b", "a", "d"])
-    XCTAssertEqual(BookSort.allCases.count, 2)
-    XCTAssertEqual(BookSort.restored("最近阅读"), .progressDescending)
-    XCTAssertEqual(BookSort.restored("阅读进度：从低到高"), .progressAscending)
-    XCTAssertNil(durationLabel(cache.reading!["a"]!))
-    XCTAssertNil(durationLabel(cache.reading!["c"]!))
-    XCTAssertEqual(durationLabel(cache.reading!["b"]!), "阅读时长 42 秒")
-}
-
-@main struct ContractTestRunner {
-    static func main() async throws {
-        let unit = BookCardTests()
-        try unit.testGatewayRejectsHTTPBusinessAndUpgradeErrors()
-        unit.testMalformedRowsAreNotTreatedAsEmpty()
-        unit.testDifferentKeysHaveIsolatedProfiles()
-        try unit.testOfflineCachePreservesOriginalNotesAndProgressUnits()
-        try unit.testFinishedFilterAndLegacyCache()
-        unit.testArticleAndChapterIdentityGrouping()
-        let sync = SyncTests()
-        try await sync.testLibraryPaginatesAndIncludesBooksWithoutNotes()
-        await sync.testRepeatedCursorStopsSync()
-        try await sync.testNotesPaginationIndependentThoughtAndOnePercentProgress()
-        await sync.testCountMismatchDoesNotProduceSnapshot()
-        try await sync.testNotebookSyncDoesNotRequestShelfOrProgress()
-        try await sync.testOfficialArticleTitleSharedAcrossHighlightAndThought()
-        try await testArticleTitleParsingAndCacheFallback()
-        testBookSortingAndUnavailableDuration()
-        print("PASS: 14 contract tests")
+    func testBookSortingAndUnavailableDuration() {
+        let books = ["a", "b", "c", "d"].map { Book(id: $0, title: $0, author: "", recent: 999) }
+        let cache = Cache(books: books, reading: [
+            "a": ReadingProgress(percent: 100, seconds: 0, synced: Date(), updatedAt: 10),
+            "b": ReadingProgress(percent: 25, seconds: 42, synced: Date(), updatedAt: 20),
+            "c": ReadingProgress(percent: 0, seconds: 0, synced: Date())
+        ])
+        XCTAssertEqual(cache.sortedBooks(by: .progressDescending).map(\.id), ["a", "b", "c", "d"])
+        XCTAssertEqual(cache.sortedBooks(by: .progressAscending).map(\.id), ["c", "b", "a", "d"])
+        XCTAssertEqual(BookSort.allCases.count, 2)
+        XCTAssertEqual(BookSort.restored("最近阅读"), .progressDescending)
+        XCTAssertEqual(BookSort.restored("阅读进度：从低到高"), .progressAscending)
+        XCTAssertNil(durationLabel(cache.reading!["a"]!))
+        XCTAssertNil(durationLabel(cache.reading!["c"]!))
+        XCTAssertEqual(durationLabel(cache.reading!["b"]!), "阅读时长 42 秒")
     }
 }

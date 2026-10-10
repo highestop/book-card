@@ -1,24 +1,15 @@
 import SwiftUI
-import AppKit
+import BookCardCore
 
-@main struct BookCardApp: App {
-    @StateObject private var store = AppStore()
-    var body: some Scene {
-        WindowGroup {
-            ContentView().environmentObject(store)
-                .frame(minWidth: 850, minHeight: 580)
-                .onAppear { NSApp.setActivationPolicy(.regular); NSApp.activate(ignoringOtherApps: true) }
-        }.defaultSize(width: 1080, height: 740)
-    }
-}
 enum LibraryTab: Hashable { case books, notes }
 struct ContentView: View {
     @EnvironmentObject var store: AppStore
     @State private var tab: LibraryTab = .books
     @State private var confirmDelete = false
+    @State private var showKey = false
     var body: some View {
         Group {
-            if !store.hasKey && store.cache.books.isEmpty { KeyView(initial: true) }
+            if !store.hasKey && store.cache.books.isEmpty { KeyView(initial: true, onConnected: { showKey = false }) }
             else {
                 VStack(spacing: 0) {
                     HStack(spacing: 16) {
@@ -27,9 +18,9 @@ struct ContentView: View {
                             Text("我的笔记").tag(LibraryTab.notes)
                         }.pickerStyle(.segmented).labelsHidden().frame(width: 280)
                         Spacer(minLength: 12)
-                        SyncStatusView(tab: tab).frame(maxWidth: 360, alignment: .trailing)
+                        SyncStatusView(tab: tab, showKey: $showKey).frame(maxWidth: 360, alignment: .trailing)
                         Menu {
-                            Button("更换 Key") { store.showKey = true }
+                            Button("更换 Key") { showKey = true }
                             Button("移除 Key（保留离线数据）") { store.removeKey() }.disabled(!store.hasKey)
                             Button("清除所有本地数据…", role: .destructive) { confirmDelete = true }
                         } label: { Label("设置", systemImage: "gearshape").labelStyle(.iconOnly) }
@@ -46,24 +37,17 @@ struct ContentView: View {
                 }
             }
         }
-        .sheet(isPresented: $store.showKey) { KeyView(initial: false) }
+        .sheet(isPresented: $showKey) { KeyView(initial: false, onConnected: { showKey = false }) }
         .confirmationDialog("清除所有本地阅读数据？", isPresented: $confirmDelete) {
             Button("清除本地数据", role: .destructive) { store.deleteData() }
         } message: { Text("将删除本机缓存，保留钥匙串中的 Key。不会删除微信读书中的任何内容。") }
-        .task(id: tab) {
-            do {
-                while store.busy { try await Task.sleep(nanoseconds: 100_000_000) }
-                try Task.checkCancellation()
-                if store.hasKey && (tab == .notes ? store.cache.notesSynced == nil : store.cache.readingSynced == nil) {
-                    await store.refresh(notes: tab == .notes)
-                }
-            } catch { }
-        }
+        .task(id: tab) { await store.ensureSynced(notes: tab == .notes) }
     }
 }
 struct SyncStatusView: View {
     @EnvironmentObject var store: AppStore
     let tab: LibraryTab
+    @Binding var showKey: Bool
     @State private var showError = false
     var syncDate: Date? { tab == .notes ? store.cache.notesSynced : store.cache.readingSynced }
     var body: some View {
@@ -73,7 +57,7 @@ struct SyncStatusView: View {
                 Text(store.status).lineLimit(1).truncationMode(.middle).help(store.status)
             } else if !store.hasKey {
                 Text("离线模式").foregroundStyle(.secondary)
-                Button("输入 Key") { store.showKey = true }
+                Button("输入 Key") { showKey = true }
             } else if let date = syncDate {
                 Text("已同步 · \(date.formatted(date: .omitted, time: .shortened))")
                     .foregroundStyle(.secondary).lineLimit(1)
@@ -88,7 +72,7 @@ struct SyncStatusView: View {
                             Text("同步异常").font(.headline)
                             ScrollView { Text(error).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }
                                 .frame(maxHeight: 220)
-                            HStack { Spacer(); Button("关闭提示") { store.error = nil; showError = false } }
+                            HStack { Spacer(); Button("关闭提示") { store.dismissError(); showError = false } }
                         }.padding(20).frame(width: 380)
                     }
             }
@@ -104,13 +88,13 @@ struct ReadingBooksView: View {
         Binding(get: { sort }, set: { storedSort = $0.rawValue })
     }
     var books: [Book] {
-        store.cache.sortedBooks(by: sort).filter { search.isEmpty || $0.title.localizedCaseInsensitiveContains(search) || $0.author.localizedCaseInsensitiveContains(search) }
+        store.cache.readingBooks(search: search, sort: sort)
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Text("我读过的书").font(.largeTitle.bold())
-                Text("\(store.cache.books.filter { !$0.official }.count) 本 · \(store.cache.finishedBooks.count) 本已读完").foregroundStyle(.secondary)
+                Text("\(store.cache.bookCount) 本 · \(store.cache.finishedBooks.count) 本已读完").foregroundStyle(.secondary)
                 Spacer()
                 TextField("搜索书名或作者", text: $search).textFieldStyle(.roundedBorder).frame(width: 220)
             }
@@ -154,12 +138,7 @@ struct AllNotesView: View {
     @EnvironmentObject var store: AppStore
     @State private var search = ""
     @State private var selected: String?
-    var sources: [Book] {
-        store.cache.books.filter {
-            (($0.highlights ?? 0) + ($0.thoughts ?? 0) > 0 || !(store.cache.details[$0.id]?.notes.isEmpty ?? true)) &&
-            (search.isEmpty || $0.title.localizedCaseInsensitiveContains(search))
-        }
-    }
+    var sources: [Book] { store.cache.noteSources(search: search) }
     var body: some View {
         NavigationSplitView {
             List(selection: $selected) {
@@ -193,12 +172,7 @@ struct SourceNotesView: View {
     @State private var kind = "全部"
     @State private var search = ""
     var notes: [Note] { store.cache.details[book.id]?.notes ?? [] }
-    var groups: [NoteGroup] {
-        groupedNotes(notes.filter {
-            (kind == "全部" || $0.kind == kind) &&
-            (search.isEmpty || $0.quote.localizedCaseInsensitiveContains(search) || ($0.thought ?? "").localizedCaseInsensitiveContains(search) || $0.chapter.localizedCaseInsensitiveContains(search))
-        }, official: book.official)
-    }
+    var groups: [NoteGroup] { store.cache.noteGroups(for: book, kind: kind, search: search) }
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text(book.title).font(.largeTitle.bold()).textSelection(.enabled)
@@ -253,6 +227,7 @@ struct KeyView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var key = ""
     let initial: Bool
+    let onConnected: () -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             Image(systemName: "book.closed.fill").font(.system(size: 44)).foregroundStyle(.tint)
@@ -274,7 +249,7 @@ struct KeyView: View {
     private func connect() {
         Task {
             if await store.connect(key) {
-                key = ""; dismiss(); store.showKey = false
+                key = ""; dismiss(); onConnected()
                 await store.refresh()
             }
         }
