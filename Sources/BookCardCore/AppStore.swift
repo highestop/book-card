@@ -8,15 +8,15 @@ import Combine
     @Published public private(set) var status = ""
     @Published public private(set) var error: String?
     private var key: String?
-    private var disk: DiskStore?
+    private var storage: SwiftDataStore?
     private var profile: String?
     public init() {
         do {
-            disk = try DiskStore()
+            storage = try SwiftDataStore()
             key = try KeyStore.read()
             hasKey = key != nil
-            profile = key.map(DiskStore.profile) ?? UserDefaults.standard.string(forKey: "lastProfile")
-            if let profile { cache = try disk!.read(profile) }
+            profile = key.map(SwiftDataStore.profile) ?? UserDefaults.standard.string(forKey: "lastProfile")
+            if let profile { cache = try storage!.read(profile) }
         } catch { self.error = "本地数据或钥匙串读取失败。请重试；现有文件未被覆盖。" }
     }
     public func connect(_ candidate: String) async -> Bool {
@@ -26,9 +26,9 @@ import Combine
         defer { busy = false; status = "" }
         do {
             try await WeReadClient(key: candidate).validate()
-            let newProfile = DiskStore.profile(candidate)
-            guard let disk else { throw AppError("本地存储不可用，请重新启动应用。") }
-            let local = try disk.read(newProfile)
+            let newProfile = SwiftDataStore.profile(candidate)
+            guard let storage else { throw AppError("本地存储不可用，请重新启动应用。") }
+            let local = try storage.read(newProfile)
             try KeyStore.save(candidate)
             key = candidate; profile = newProfile; hasKey = true
             UserDefaults.standard.set(newProfile, forKey: "lastProfile")
@@ -58,7 +58,7 @@ import Combine
             let ids = Set(books.map(\.id))
             next.books = books + cache.books.filter { !ids.contains($0.id) }
             next.synced = Date()
-            try persist(next)
+            try persist(next, update: .library)
             let sources = notes ? books : books.filter { !$0.official }
             var failures: [String] = []
             for (index, book) in sources.enumerated() {
@@ -81,7 +81,7 @@ import Combine
                         if updated.reading == nil { updated.reading = [:] }
                         updated.reading?[book.id] = progress
                     }
-                    try persist(updated)
+                    try persist(updated, update: notes ? .detail(book.id) : .reading(book.id))
                 } catch {
                     if error is CancellationError { throw error }
                     failures.append("《\(book.title)》：\(displayError(error))")
@@ -90,15 +90,15 @@ import Combine
             if failures.isEmpty {
                 var updated = cache
                 if notes { updated.notesSynced = Date() } else { updated.readingSynced = Date() }
-                try persist(updated)
+                try persist(updated, update: .syncStatus)
             } else {
                 self.error = "\(failures.count) 个来源未能更新，当前结果可能不完整，旧数据已保留。\(failures.prefix(3).joined(separator: "；"))"
             }
         } catch { self.error = displayError(error) }
     }
-    private func persist(_ next: Cache) throws {
-        guard let disk, let profile else { throw AppError("本地存储不可用。") }
-        do { try disk.write(next, profile: profile) } catch { throw AppError("保存本地数据失败，请检查磁盘空间和权限。") }
+    private func persist(_ next: Cache, update: SwiftDataStore.Update) throws {
+        guard let storage, let profile else { throw AppError("本地存储不可用。") }
+        do { try storage.write(next, profile: profile, update: update) } catch { throw AppError("保存本地数据失败，请检查磁盘空间和权限。") }
         cache = next
     }
     public func removeKey() {
@@ -106,7 +106,10 @@ import Combine
         catch { self.error = displayError(error) }
     }
     public func deleteData() {
-        do { try disk?.deleteAll(); cache = Cache() }
+        do {
+            guard let storage else { throw AppError("本地存储不可用。") }
+            try storage.deleteAll(); cache = Cache()
+        }
         catch { self.error = "清除本地数据失败，请重试。" }
     }
 }

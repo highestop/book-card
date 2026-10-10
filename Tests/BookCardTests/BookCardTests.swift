@@ -16,9 +16,9 @@ final class BookCardTests: XCTestCase {
         XCTAssertThrowsError(try required(["bookId": ""], "bookId"))
     }
     func testDifferentKeysHaveIsolatedProfiles() {
-        XCTAssertNotEqual(DiskStore.profile("test-key-a"), DiskStore.profile("test-key-b"))
-        XCTAssertEqual(DiskStore.profile("test-key-a"), DiskStore.profile("test-key-a"))
-        XCTAssertFalse(DiskStore.profile("test-key-a").contains("test-key"))
+        XCTAssertNotEqual(SwiftDataStore.profile("test-key-a"), SwiftDataStore.profile("test-key-b"))
+        XCTAssertEqual(SwiftDataStore.profile("test-key-a"), SwiftDataStore.profile("test-key-a"))
+        XCTAssertFalse(SwiftDataStore.profile("test-key-a").contains("test-key"))
     }
     func testOfflineCachePreservesOriginalNotesAndProgressUnits() throws {
         let original = "第一段\n\n第二段  with spaces"
