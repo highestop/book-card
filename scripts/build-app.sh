@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "${0:A:h:h}"
 export CLANG_MODULE_CACHE_PATH="$PWD/.build/clang-cache"
-swift build -c release --disable-sandbox
+swift build -c release --product BookCard --disable-sandbox
 app="$PWD/build/BookCard.app"
 mkdir -p "$app/Contents/MacOS"
 cp .build/release/BookCard "$app/Contents/MacOS/BookCard"
