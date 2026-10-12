@@ -1,7 +1,7 @@
 import Foundation
 
-enum ArticleTitles {
-    static func publicURL(_ id: String) -> URL? {
+public enum ArticleTitles {
+    public static func publicURL(_ id: String) -> URL? {
         let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
         guard let encoded = id.replacingOccurrences(of: "~", with: "_").addingPercentEncoding(withAllowedCharacters: allowed) else { return nil }
         return URL(string: "https://mp.weixin.qq.com/s/" + encoded)
@@ -58,7 +58,7 @@ enum ArticleTitles {
     static func usable(_ title: String, id: String) -> Bool {
         !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && title != "文章 \(id)" && title != "文章（标题暂缺）"
     }
-    static func enrich(_ detail: BookDetail, previous: BookDetail?, lookup: (String) async -> String? = fetch) async throws -> BookDetail {
+    static func enrich(_ detail: BookDetail, previous: BookDetail?, lookup: @escaping (String) async -> String? = fetch) async throws -> BookDetail {
         var result = detail
         var titles: [String: String] = [:]
         for note in previous?.notes ?? [] {
@@ -67,9 +67,23 @@ enum ArticleTitles {
         for note in detail.notes {
             if let id = note.sectionID, usable(note.chapter, id: id) { titles[id] = note.chapter }
         }
-        for id in Set(detail.notes.compactMap(\.sectionID)).sorted() where titles[id] == nil {
-            try Task.checkCancellation()
-            if let title = await lookup(id), usable(title, id: id) { titles[id] = title }
+        let missing = Set(detail.notes.compactMap(\.sectionID)).filter { titles[$0] == nil }.sorted()
+        // Bound public metadata requests so a large article collection does not
+        // pay one network timeout per title in sequence.
+        try await withThrowingTaskGroup(of: (String, String?).self) { group in
+            var pending = missing.makeIterator()
+            func enqueue(_ id: String) {
+                group.addTask {
+                    try Task.checkCancellation()
+                    return (id, await lookup(id))
+                }
+            }
+            for _ in 0..<4 { if let id = pending.next() { enqueue(id) } }
+            while let (id, title) = try await group.next() {
+                try Task.checkCancellation()
+                if let title, usable(title, id: id) { titles[id] = title }
+                if let next = pending.next() { enqueue(next) }
+            }
         }
         try Task.checkCancellation()
         for index in result.notes.indices {

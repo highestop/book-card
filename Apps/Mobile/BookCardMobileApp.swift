@@ -15,6 +15,7 @@ import BookCardCore
 struct MobileSessionView: View {
     @EnvironmentObject private var store: AppStore
     @State private var showKey = false
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         Group {
@@ -26,6 +27,9 @@ struct MobileSessionView: View {
                 iPhoneLibraryView(showKey: $showKey)
             }
         }
+        .tint(MobilePaper.green).preferredColorScheme(.light)
+        .task { await store.start() }
+        .onChange(of: scenePhase) { _, phase in if phase == .active { Task { await store.refreshIfNeeded() } } }
         .sheet(isPresented: $showKey) {
             MobileKeyView(initial: false, onConnected: { showKey = false })
                 .interactiveDismissDisabled(store.busy)

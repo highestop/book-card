@@ -3,7 +3,6 @@ import BookCardCore
 
 private struct MobileControls: ViewModifier {
     @EnvironmentObject private var store: AppStore
-    let notes: Bool
     @Binding var showKey: Bool
     @State private var confirmDelete = false
     @State private var showError = false
@@ -13,6 +12,9 @@ private struct MobileControls: ViewModifier {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
+                        Button("立即同步") { Task { await store.refresh() } }.disabled(!store.hasKey)
+                        Button("完整校验所有笔记") { Task { await store.refresh(force: true) } }.disabled(!store.hasKey)
+                        Divider()
                         Button(store.hasKey ? "更换 Key" : "输入 Key") { showKey = true }
                         if store.hasKey {
                             Button("移除 Key（保留离线数据）") { store.removeKey() }
@@ -29,7 +31,7 @@ private struct MobileControls: ViewModifier {
                         Text(store.status).lineLimit(1)
                     } else if !store.hasKey {
                         Text("离线模式")
-                    } else if let date = notes ? store.cache.notesSynced : store.cache.readingSynced {
+                    } else if let date = store.cache.notesSynced {
                         Text("已同步 · \(date.formatted(date: .omitted, time: .shortened))")
                     } else {
                         Text("尚未完成同步")
@@ -56,7 +58,7 @@ private struct MobileControls: ViewModifier {
 }
 
 extension View {
-    func mobileControls(notes: Bool, showKey: Binding<Bool>) -> some View {
-        modifier(MobileControls(notes: notes, showKey: showKey))
+    func mobileControls(showKey: Binding<Bool>) -> some View {
+        modifier(MobileControls(showKey: showKey))
     }
 }

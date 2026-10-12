@@ -40,6 +40,7 @@ enum KeyStore {
     private typealias Annotation = LibrarySchemaV1.Annotation
     private typealias Progress = LibrarySchemaV1.Progress
     private typealias SyncState = LibrarySchemaV1.SyncState
+    private typealias NotebookState = LibrarySchemaV2.NotebookState
 
     init(directory customDirectory: URL? = nil) throws {
         directory = try customDirectory ?? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true).appendingPathComponent("BookCard", isDirectory: true)
@@ -59,6 +60,7 @@ enum KeyStore {
             if let detail = source.detail { details[source.id] = detail.value }
             if let progress = source.progress { reading[source.id] = progress.value }
         }
+        for stamp in try context.fetch(FetchDescriptor<NotebookState>()) { details[stamp.sourceID]?.stamp = stamp.value }
         return Cache(books: books, details: details, synced: state.synced,
                      reading: state.hasReading ? reading : nil, readingSynced: state.readingSynced, notesSynced: state.notesSynced)
     }
@@ -95,6 +97,7 @@ enum KeyStore {
             let sources = try context.fetch(FetchDescriptor<Source>())
             try transaction(in: context) {
                 for source in sources { context.delete(source) }
+                for stamp in try context.fetch(FetchDescriptor<NotebookState>()) { context.delete(stamp) }
                 let state = try syncState(in: context)
                 state.synced = nil; state.readingSynced = nil; state.notesSynced = nil
                 state.hasReading = false; state.legacyMigrationComplete = true
@@ -112,7 +115,7 @@ enum KeyStore {
     private func context(for profile: String, migrateLegacy: Bool = true) throws -> ModelContext {
         guard Self.validProfile(profile) else { throw AppError("本地数据标识无效。") }
         if let context = contexts[profile] { return context }
-        let schema = Schema(versionedSchema: LibrarySchemaV1.self)
+        let schema = Schema(versionedSchema: LibrarySchemaV2.self)
         let configuration = ModelConfiguration(schema: schema, url: directory.appendingPathComponent(profile + ".store"), cloudKitDatabase: .none)
         let container = try ModelContainer(for: schema, migrationPlan: LibraryMigrationPlan.self, configurations: [configuration])
         let context = ModelContext(container)
@@ -184,6 +187,12 @@ enum KeyStore {
         }
         detail.notes = notes
         for obsolete in previous.values { context.delete(obsolete) }
+        let descriptor = FetchDescriptor<NotebookState>(predicate: #Predicate { $0.sourceID == sourceID })
+        let existingStamp = try context.fetch(descriptor).first
+        if let stamp = value.stamp {
+            if let existingStamp { existingStamp.update(stamp) }
+            else { context.insert(NotebookState(sourceID: sourceID, stamp: stamp)) }
+        } else if let existingStamp { context.delete(existingStamp) }
     }
 
     private func saveProgress(_ value: ReadingProgress, sourceID: String, in context: ModelContext) throws {

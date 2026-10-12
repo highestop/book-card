@@ -1,6 +1,7 @@
 #!/bin/zsh
 set -euo pipefail
 cd "${0:A:h:h}"
+source scripts/toolchain.sh
 platform="${1:-simulator}"
 case "$platform" in
   simulator)

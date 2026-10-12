@@ -1,6 +1,7 @@
 #!/bin/zsh
 set -euo pipefail
 cd "${0:A:h:h}"
+source scripts/toolchain.sh
 requested_device="${1:-iphone}"
 device_id=$(xcrun simctl list devices available -j | python3 -c '
 import json, sys

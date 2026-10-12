@@ -1,8 +1,9 @@
 #!/bin/zsh
 set -euo pipefail
 cd "${0:A:h:h}"
+source scripts/toolchain.sh
 export CLANG_MODULE_CACHE_PATH="$PWD/.build/clang-cache"
-swift build -c release --product BookCard --disable-sandbox
+xcrun swift build -c release --product BookCard --disable-sandbox
 app="$PWD/build/BookCard.app"
 mkdir -p "$app/Contents/MacOS"
 cp .build/release/BookCard "$app/Contents/MacOS/BookCard"
