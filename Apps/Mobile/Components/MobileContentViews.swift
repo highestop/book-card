@@ -138,7 +138,8 @@ struct MobileBookmarksView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var search = ""
     @State private var sourceID: String?
-    private var entries: [NoteEntry] { store.cache.bookmarks(sourceID: sourceID, search: search) }
+    @State private var sectionID: String?
+    private var entries: [NoteEntry] { store.cache.bookmarks(sourceID: sourceID, sectionID: sectionID, search: search) }
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             VStack(alignment: .leading, spacing: 16) {
@@ -147,11 +148,11 @@ struct MobileBookmarksView: View {
                 Text("\(entries.count) 张书签 · 标记时间从新到旧").font(.caption).foregroundStyle(.secondary)
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 12) {
-                        SourcePicker(books: store.cache.noteBooks, selection: $sourceID).frame(width: 220)
+                        SourcePicker(cache: store.cache, sourceID: $sourceID, sectionID: $sectionID).frame(width: 240)
                         MobileSearchField(text: $search, placeholder: "书名、作者、文章、引用或想法").frame(minWidth: 300)
                     }
                     VStack(spacing: 12) {
-                        SourcePicker(books: store.cache.noteBooks, selection: $sourceID)
+                        SourcePicker(cache: store.cache, sourceID: $sourceID, sectionID: $sectionID)
                         MobileSearchField(text: $search, placeholder: "书名、作者、文章、引用或想法")
                     }
                 }
@@ -164,7 +165,7 @@ struct MobileBookmarksView: View {
                         MobileBookmarkCard(entry: entry)
                     }.padding(.horizontal, 24).padding(.bottom, 24)
                 }
-            }.id("\(sourceID ?? "")|\(search)")
+            }.id([sourceID ?? "", sectionID ?? "", search])
                 .refreshable { await store.refresh() }
         }.background(MobilePaper.background).toolbar(.hidden, for: .navigationBar)
     }
