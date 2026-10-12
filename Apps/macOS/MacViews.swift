@@ -2,18 +2,18 @@ import SwiftUI
 import AppKit
 import BookCardCore
 
-enum LibraryPage: Hashable { case home, shelf, book(String) }
+enum LibraryPage: Hashable { case home, bookmarks, book(String) }
 
 struct ContentView: View {
     @EnvironmentObject var store: AppStore
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var page: LibraryPage = .home
-    @State private var shelfState = ShelfState()
+    @State private var bookmarksState = BookmarksState()
     @State private var showKey = false
     @State private var confirmDelete = false
-    init(initialPage: LibraryPage = .home, initialShelf: ShelfState = ShelfState()) {
-        _page = State(initialValue: initialPage); _shelfState = State(initialValue: initialShelf)
+    init(initialPage: LibraryPage = .home, initialBookmarks: BookmarksState = BookmarksState()) {
+        _page = State(initialValue: initialPage); _bookmarksState = State(initialValue: initialBookmarks)
     }
     var body: some View {
         VStack(spacing: 0) {
@@ -23,12 +23,12 @@ struct ContentView: View {
                 if !store.hasKey && store.cache.books.isEmpty { KeyView(initial: true) }
                 else {
                     switch page {
-                    case .home: HomeView(openShelf: { navigate(.shelf) }, openBook: { navigate(.book($0)) })
-                    case .shelf: BookshelfView(openBook: { navigate(.book($0)) }, state: $shelfState)
+                    case .home: HomeView(openBookmarks: { navigate(.bookmarks) }, openBook: { navigate(.book($0)) })
+                    case .bookmarks: AllBookmarksView(openBook: { navigate(.book($0)) }, state: $bookmarksState)
                     case .book(let id):
                         if let book = store.cache.books.first(where: { $0.id == id }) {
-                            BookNotesView(book: book, back: { navigate(.shelf) }).id(id)
-                        } else { BookshelfView(openBook: { navigate(.book($0)) }, state: $shelfState) }
+                            BookNotesView(book: book, back: { navigate(.bookmarks) }).id(id)
+                        } else { AllBookmarksView(openBook: { navigate(.book($0)) }, state: $bookmarksState) }
                     }
                 }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -56,7 +56,7 @@ struct ContentView: View {
                 Text("BookCard").font(.system(size: 20, weight: .semibold, design: .serif))
             }.padding(.trailing, 24)
             navButton("最近书签", icon: "rectangle.stack", destination: .home, active: page == .home)
-            navButton("全部书签", icon: "books.vertical", destination: .shelf, active: page != .home)
+            navButton("全部书签", icon: "square.grid.2x2", destination: .bookmarks, active: page != .home)
             Spacer(minLength: 8)
             SyncStatusView()
             Menu {
@@ -101,7 +101,7 @@ struct SyncStatusView: View {
                     }
             } else {
                 Circle().fill(store.hasKey ? Paper.green : Paper.secondary).frame(width: 5, height: 5)
-                Text(store.hasKey ? (store.cache.notesSynced == nil ? "等待同步" : "已同步到本机") : "离线书架")
+                Text(store.hasKey ? (store.cache.notesSynced == nil ? "等待同步" : "已同步到本机") : "离线书签")
                     .help(store.cache.notesSynced.map { "最近同步：" + readingDate($0) } ?? "连接后自动同步读书笔记")
             }
         }.font(.system(size: 11)).foregroundStyle(Paper.secondary)
@@ -118,12 +118,12 @@ struct KeyView: View {
             Ribbon().fill(Paper.green).frame(width: 40, height: 58)
             Text(initial ? "把读过的片刻，\n留成一张书签。" : "连接你的微信读书")
                 .font(.system(size: 30, weight: .medium, design: .serif)).lineSpacing(8)
-            Text("划线与想法，汇成你的私人书架。\n每次打开，接着读最近留下的那一页。")
+            Text("划线与想法，汇成你的私人书签集。\n每次打开，接着读最近留下的那一页。")
                 .font(.system(size: 14)).lineSpacing(6).foregroundStyle(Paper.secondary)
             Link("获取微信读书官方 Key ↗", destination: URL(string: "https://weread.qq.com/r/weread-skills")!)
             SecureField("粘贴 wrk- 开头的 Key", text: $key).textFieldStyle(.roundedBorder)
                 .onSubmit { connect() }.disabled(store.busy)
-            Text("Key 安全保存在本机钥匙串，笔记缓存到本地，离线也能阅读。更换 Key 会切换到独立书架。")
+            Text("Key 安全保存在本机钥匙串，笔记缓存到本地，离线也能阅读。更换 Key 会切换到独立笔记缓存。")
                 .font(.caption).foregroundStyle(Paper.secondary)
             if let error = store.error { Text(error).foregroundStyle(Paper.rust).font(.callout).textSelection(.enabled) }
             HStack {

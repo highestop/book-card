@@ -33,11 +33,21 @@ public enum ArticleTitles {
             var attributes: [String: String] = [:]
             for attribute in matches("([\\w:-]+)\\s*=\\s*([\"'])(.*?)\\2", tag[0]) { attributes[attribute[1].lowercased()] = attribute[3] }
             if (attributes["property"] ?? attributes["name"])?.lowercased() == "og:title", let content = attributes["content"] {
-                let title = decodeEntities(content)
-                if !title.isEmpty { return title }
+                if let title = title(content) { return title }
             }
         }
+        // Article pages also expose their title as a heading when OG metadata
+        // is absent. Do not accept a generic HTML title from a verification page.
+        for heading in matches("<h[12]\\b[^>]*\\bid\\s*=\\s*([\"'])activity-name\\1[^>]*>(.*?)</h[12]>", html) {
+            if let title = title(heading[2].replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)) { return title }
+        }
         return nil
+    }
+    static func title(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        let value = decodeEntities(raw)
+        guard !value.isEmpty, !["微信公众平台", "环境异常", "安全验证", "文章（标题暂缺）"].contains(value) else { return nil }
+        return value
     }
     static func fetch(_ id: String) async -> String? {
         guard let url = publicURL(id) else { return nil }
@@ -56,7 +66,10 @@ public enum ArticleTitles {
         return parse(html)
     }
     static func usable(_ title: String, id: String) -> Bool {
-        !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && title != "文章 \(id)" && title != "文章（标题暂缺）"
+        Self.title(title) != nil && title.trimmingCharacters(in: .whitespacesAndNewlines) != "文章 \(id)"
+    }
+    static func needsEnrichment(_ detail: BookDetail) -> Bool {
+        detail.notes.contains { note in note.sectionID.map { !usable(note.chapter, id: $0) } ?? false }
     }
     static func enrich(_ detail: BookDetail, previous: BookDetail?, lookup: @escaping (String) async -> String? = fetch) async throws -> BookDetail {
         var result = detail

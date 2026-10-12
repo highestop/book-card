@@ -1,7 +1,7 @@
 import SwiftUI
 import BookCardCore
 
-private enum PadDestination: Hashable { case home, shelf, book(String) }
+private enum PadDestination: Hashable { case home, bookmarks, book(String) }
 struct iPadLibraryView: View {
     @EnvironmentObject private var store: AppStore
     @Binding var showKey: Bool
@@ -12,7 +12,7 @@ struct iPadLibraryView: View {
             List(selection: $destination) {
                 Section {
                     NavigationLink(value: PadDestination.home) { Label("最近书签", systemImage: "rectangle.stack") }
-                    NavigationLink(value: PadDestination.shelf) { Label("全部书签", systemImage: "books.vertical") }
+                    NavigationLink(value: PadDestination.bookmarks) { Label("全部书签", systemImage: "square.grid.2x2") }
                 }
                 Section("书籍与文集") {
                     ForEach(store.cache.noteSources(search: search)) { book in
@@ -32,10 +32,10 @@ struct iPadLibraryView: View {
                 Group {
                     switch destination {
                     case .home, nil: MobileHomeView()
-                    case .shelf: MobileShelfView()
+                    case .bookmarks: MobileBookmarksView()
                     case .book(let id):
                         if let book = store.cache.books.first(where: { $0.id == id }) { MobileSourceNotesView(book: book).id(id) }
-                        else { MobileShelfView() }
+                        else { MobileBookmarksView() }
                     }
                 }.mobileControls(showKey: $showKey)
             }.id(destination)
