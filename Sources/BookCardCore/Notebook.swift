@@ -78,12 +78,13 @@ public extension NoteEntry {
 protocol NotesAPI {
     func library() async throws -> [Book]
     func detail(_ book: Book) async throws -> BookDetail
+    func articleTitle(bookID: String, articleID: String) async -> String?
 }
 extension WeReadClient: NotesAPI {}
 
 @MainActor enum NotebookSync {
     static func run(cache initial: Cache, api: NotesAPI, force: Bool = false,
-                    enrich: (BookDetail, BookDetail?) async throws -> BookDetail = { try await ArticleTitles.enrich($0, previous: $1) },
+                    enrich: ((BookDetail, BookDetail?) async throws -> BookDetail)? = nil,
                     progress: (String) -> Void,
                     save: (Cache, SwiftDataStore.Update) throws -> Void) async throws -> [String] {
         let books = try await api.library()
@@ -94,6 +95,14 @@ extension WeReadClient: NotesAPI {}
         cache.synced = Date()
         try save(cache, .library)
         let pending = books.filter { SyncPlan.needsDetail($0, cached: cache.details[$0.id], force: force) }
+        func enrichTitles(_ detail: BookDetail, previous: BookDetail?, book: Book) async throws -> BookDetail {
+            if let enrich { return try await enrich(detail, previous) }
+            return try await ArticleTitles.enrich(detail, previous: previous) { id in
+                if let title = await api.articleTitle(bookID: book.id, articleID: id), ArticleTitles.usable(title, id: id) { return title }
+                guard !Task.isCancelled else { return nil }
+                return await ArticleTitles.fetch(id)
+            }
+        }
         var failures: [String] = []
         for (index, book) in pending.enumerated() {
             try Task.checkCancellation()
@@ -119,7 +128,7 @@ extension WeReadClient: NotesAPI {}
                 cache.details[book.id] = detail
                 try save(cache, .detail(book.id))
                 progress("补全文章标题 · \(book.title)")
-                do { detail = try await enrich(detail, previous) }
+                do { detail = try await enrichTitles(detail, previous: previous, book: book) }
                 catch {
                     if error is CancellationError { throw error }
                     failures.append("《\(book.title)》：\(displayError(error))")
@@ -129,6 +138,18 @@ extension WeReadClient: NotesAPI {}
             detail.stamp = NotebookStamp(book)
             cache.details[book.id] = detail
             // Disk failures abort immediately; a failed save must not advance a stamp.
+            try save(cache, .detail(book.id))
+        }
+        // Retry only unresolved metadata in otherwise unchanged notebooks.
+        // Keep the content's timestamp and stamp so this cannot postpone its
+        // daily reconciliation or trigger a full note download on every launch.
+        let pendingIDs = Set(pending.map(\.id))
+        for book in books where book.official && !pendingIDs.contains(book.id) {
+            guard let detail = cache.details[book.id], ArticleTitles.needsEnrichment(detail) else { continue }
+            try Task.checkCancellation()
+            progress("补全文章标题 · \(book.title)")
+            let enriched = try await enrichTitles(detail, previous: detail, book: book)
+            cache.details[book.id] = enriched
             try save(cache, .detail(book.id))
         }
         try Task.checkCancellation()

@@ -88,11 +88,16 @@ struct BookmarkCard: View {
                         Image(systemName: entry.book.official ? "newspaper" : "book.closed")
                         Text(entry.book.official ? "公众号 · " + entry.note.kind : "读书笔记 · " + entry.note.kind)
                     }.font(.system(size: 10, weight: .medium)).foregroundStyle(color)
+                    Text(entry.chapterTitle).font(.system(size: featured ? 21 : 17, weight: .semibold, design: .serif))
+                        .fixedSize(horizontal: false, vertical: true)
                     if let openBook {
-                        Button(action: openBook) { Text(entry.book.title).font(.system(size: featured ? 19 : 16, weight: .semibold, design: .serif)).multilineTextAlignment(.leading) }
-                            .buttonStyle(.plain).help("打开这本书的全部书签")
-                    } else { Text(entry.book.title).font(.system(size: featured ? 19 : 16, weight: .semibold, design: .serif)) }
-                    Text(entry.chapterTitle).font(.system(size: 11)).foregroundStyle(Paper.secondary).fixedSize(horizontal: false, vertical: true)
+                        Button(action: openBook) {
+                            Text(entry.book.title).multilineTextAlignment(.leading)
+                        }.buttonStyle(.plain).help("打开此来源的全部书签")
+                            .font(.system(size: 12)).foregroundStyle(Paper.secondary)
+                    } else {
+                        Text(entry.book.title).font(.system(size: 12)).foregroundStyle(Paper.secondary)
+                    }
                 }
                 Spacer(minLength: 20)
                 Image(systemName: "quote.opening").font(.system(size: featured ? 29 : 22, weight: .light)).foregroundStyle(color.opacity(0.38)).padding(.top, 4)
@@ -147,34 +152,5 @@ struct BookmarkCard: View {
                     .accessibilityHidden(true)
             }
             .shadow(color: Paper.ink.opacity(featured ? 0.07 : 0.025), radius: featured ? 24 : 12, x: 0, y: 9)
-    }
-}
-
-struct BookCover: View {
-    let book: Book
-    var compact = false
-    private var color: Color { Paper.color(for: book.id) }
-    var body: some View {
-        ZStack(alignment: .leading) {
-            RoundedRectangle(cornerRadius: 5).fill(color.gradient)
-            Rectangle().fill(.black.opacity(0.12)).frame(width: 9).padding(.leading, 5)
-            Rectangle().fill(.white.opacity(0.15)).frame(width: 1).padding(.leading, 14)
-            VStack(alignment: .leading, spacing: compact ? 8 : 15) {
-                Text(book.official ? "ARTICLES & NOTES" : "READING & NOTES")
-                    .font(.system(size: compact ? 5 : 7, weight: .medium)).tracking(compact ? 0.5 : 1.8).opacity(0.65)
-                Rectangle().fill(.white.opacity(0.35)).frame(width: compact ? 20 : 32, height: 1)
-                Text(book.title).font(.system(size: compact ? 15 : 23, weight: .medium, design: .serif))
-                    .lineSpacing(5).lineLimit(compact ? 3 : 4).minimumScaleFactor(0.75)
-                Spacer(minLength: 4)
-                Text(book.official ? "公众号文集" : (book.author.isEmpty ? "阅读札记" : book.author))
-                    .font(.system(size: compact ? 7 : 10)).lineLimit(2).opacity(0.75)
-                if !compact { Image(systemName: book.official ? "newspaper" : "leaf").font(.system(size: 18, weight: .ultraLight)).opacity(0.55) }
-            }.foregroundStyle(Color(hex: 0xF5F0DE)).padding(.leading, compact ? 22 : 30).padding(.trailing, 15).padding(.vertical, compact ? 18 : 26)
-        }
-        .overlay(alignment: .topTrailing) { Ribbon().fill(Paper.rust).frame(width: compact ? 10 : 16, height: compact ? 28 : 40).padding(.trailing, compact ? 13 : 19) }
-        .overlay(alignment: .trailing) { UnevenRoundedRectangle(bottomTrailingRadius: 3, topTrailingRadius: 3).fill(Color(hex: 0xEAE4D4)).frame(width: 4).padding(.vertical, 5) }
-        .clipShape(RoundedRectangle(cornerRadius: 5))
-        .shadow(color: .black.opacity(0.16), radius: compact ? 5 : 10, x: 5, y: 7)
-        .accessibilityElement(children: .ignore).accessibilityLabel(book.title)
     }
 }

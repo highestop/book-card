@@ -11,5 +11,5 @@ if [[ -f "$preview_bin/libBookCardCore.a" ]]; then
 else
   preview_core=(-I "$preview_bin/Modules" "$preview_bin"/BookCardCore.build/*.swift.o)
 fi
-xcrun swiftc -swift-version 5 -D PREVIEW_RENDER -parse-as-library -module-cache-path "$PWD/.build/clang-cache" "${preview_core[@]}" Apps/macOS/*.swift scripts/render-preview.swift -o .build/previews/RenderPreview
+xcrun swiftc -swift-version 5 -D PREVIEW_RENDER -parse-as-library -module-cache-path "$PWD/.build/clang-cache" "${preview_core[@]}" Apps/macOS/*.swift Apps/Shared/*.swift scripts/render-preview.swift -o .build/previews/RenderPreview
 .build/previews/RenderPreview

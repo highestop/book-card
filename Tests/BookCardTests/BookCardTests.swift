@@ -248,6 +248,12 @@ final class MemoryNotesAPI: NotesAPI {
     var cancelled = false
     var failLibrary = false
     init(books: [Book], details: [String: BookDetail]) { self.books = books; self.details = details }
+    var titles: [String: String] = [:]
+    var titleRequests: [String] = []
+    func articleTitle(bookID: String, articleID: String) async -> String? {
+        titleRequests.append(articleID)
+        return titles[articleID]
+    }
     func library() async throws -> [Book] {
         if failLibrary { throw URLError(.notConnectedToInternet) }
         return books

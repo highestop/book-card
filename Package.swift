@@ -9,7 +9,7 @@ let package = Package(
     ],
     targets: [
         .target(name: "BookCardCore"),
-        .executableTarget(name: "BookCardMac", dependencies: ["BookCardCore"], path: "Apps/macOS"),
+        .executableTarget(name: "BookCardMac", dependencies: ["BookCardCore"], path: "Apps", exclude: ["Mobile"], sources: ["macOS", "Shared"]),
         .testTarget(name: "BookCardCoreTests", dependencies: ["BookCardCore"], path: "Tests/BookCardTests")
     ],
     swiftLanguageModes: [.v5]

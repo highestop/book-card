@@ -4,7 +4,7 @@ import BookCardCore
 struct HomeView: View {
     @EnvironmentObject var store: AppStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    let openShelf: () -> Void
+    let openBookmarks: () -> Void
     let openBook: (String) -> Void
     @State private var selectedID: String?
     private var entries: [NoteEntry] { store.cache.allNotes }
@@ -48,11 +48,11 @@ struct HomeView: View {
                                     .disabled(index >= entries.count - 1).buttonStyle(QuietButton())
                             }.font(.system(size: 11))
                         } else {
-                            EmptyBookmarks(title: store.busy ? "正在整理你的书签…" : "第一张书签，等你留下", message: store.busy ? "笔记会逐本存入书架，稍等片刻。" : "在微信读书中划线或写下想法，\n回到这里便会自动同步。")
+                            EmptyBookmarks(title: store.busy ? "正在整理你的书签…" : "第一张书签，等你留下", message: store.busy ? "笔记会逐本存入本机，稍等片刻。" : "在微信读书中划线或写下想法，\n回到这里便会自动同步。")
                                 .frame(minHeight: 340).background(Paper.card, in: RoundedRectangle(cornerRadius: 12))
                         }
                     }.frame(maxWidth: .infinity)
-                    shelfDoor.frame(width: 250)
+                    collectionDoor.frame(width: 250)
                 }
                 HStack(spacing: 8) {
                     Rectangle().fill(Paper.line).frame(width: 28, height: 1)
@@ -66,27 +66,35 @@ struct HomeView: View {
         guard entries.indices.contains(destination) else { return }
         withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.22)) { selectedID = entries[destination].id }
     }
-    private var shelfDoor: some View {
+    private var collectionDoor: some View {
         VStack(alignment: .leading, spacing: 20) {
-            Eyebrow(title: "THE BOOKSHELF")
-            HStack(alignment: .bottom, spacing: -13) {
-                ForEach(Array(store.cache.noteBooks.prefix(3).enumerated()), id: \.element.id) { index, book in
-                    BookCover(book: book, compact: true).frame(width: 80, height: 120)
-                        .rotationEffect(.degrees(Double(index - 1) * 7)).offset(y: index == 1 ? -8 : 0)
+            Eyebrow(title: "THE COLLECTION")
+            ZStack {
+                ForEach(0..<3) { index in
+                    RoundedRectangle(cornerRadius: 8).fill(index == 2 ? Paper.card : Paper.card.opacity(0.6))
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Paper.line, lineWidth: 1))
+                        .overlay(alignment: .topTrailing) {
+                            Ribbon().fill(Paper.green.opacity(index == 2 ? 1 : 0.45)).frame(width: 14, height: 32).padding(.trailing, 16)
+                        }
+                        .overlay(alignment: .leading) {
+                            VStack(alignment: .leading, spacing: 10) {
+                                ForEach(0..<3) { line in Capsule().fill(Paper.green.opacity(0.15)).frame(width: line == 2 ? 48 : 80, height: 3) }
+                            }.padding(20)
+                        }
+                        .frame(width: 150, height: 108)
+                        .rotationEffect(.degrees(Double(index - 2) * -8))
+                        .offset(x: CGFloat(index - 2) * -5, y: CGFloat(index - 2) * 9)
                 }
-                if store.cache.noteBooks.isEmpty {
-                    Image(systemName: "books.vertical").font(.system(size: 65, weight: .ultraLight)).foregroundStyle(Paper.green.opacity(0.5)).frame(height: 120)
-                }
-            }.frame(maxWidth: .infinity).padding(.top, 13).padding(.bottom, 4).accessibilityHidden(true)
+            }.frame(maxWidth: .infinity).frame(height: 140).accessibilityHidden(true)
             Rectangle().fill(Paper.line).frame(height: 1)
             VStack(alignment: .leading, spacing: 10) {
-                Text("你的书签书架").font(.system(size: 21, weight: .medium, design: .serif))
+                Text("你的书签集").font(.system(size: 21, weight: .medium, design: .serif))
                 Text("\(store.cache.noteBooks.count) 本书与文集 · \(entries.count) 张书签")
                     .font(.system(size: 11)).foregroundStyle(Paper.secondary)
-                Text("每一本书，都藏着\n让你停留过的句子。")
+                Text("那些让你停留的句子，\n都在这里等你重读。")
                     .font(.system(size: 12)).lineSpacing(6).foregroundStyle(Paper.secondary).padding(.top, 2)
             }
-            Button(action: openShelf) {
+            Button(action: openBookmarks) {
                 HStack { Text("打开全部书签"); Spacer(); Image(systemName: "arrow.up.right") }
                     .font(.system(size: 12, weight: .medium)).padding(14).foregroundStyle(Paper.card)
                     .background(Paper.green, in: RoundedRectangle(cornerRadius: 8))
