@@ -76,8 +76,12 @@ public extension NoteEntry {
 }
 
 public extension Cache {
-    func bookmarks(sourceID: String? = nil, search: String = "") -> [NoteEntry] {
-        allNotes.filter { (sourceID == nil || $0.book.id == sourceID) && $0.matches(search) }
+    func bookmarks(sourceID: String? = nil, sectionID: String? = nil, search: String = "") -> [NoteEntry] {
+        guard sectionID == nil || sourceID != nil else { return [] }
+        return allNotes.filter {
+            (sourceID == nil || $0.book.id == sourceID) &&
+            (sectionID == nil || $0.note.groupID(official: $0.book.official) == sectionID) && $0.matches(search)
+        }
     }
     func randomBookmark(excluding currentID: String?) -> NoteEntry? {
         let entries = allNotes

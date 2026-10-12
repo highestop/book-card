@@ -26,6 +26,9 @@ public struct Note: Identifiable, Codable {
     public var created: Double?
     public var sectionID: String?
     public var sectionOrder: Int?
+    func groupID(official: Bool) -> String {
+        sectionID ?? (official ? "unknown:" + id : "legacy:" + chapter)
+    }
 }
 public struct NoteGroup: Identifiable {
     public init(id: String, title: String, notes: [Note]) { self.id = id; self.title = title; self.notes = notes }
@@ -35,7 +38,7 @@ public struct NoteGroup: Identifiable {
 }
 public func groupedNotes(_ notes: [Note], official: Bool) -> [NoteGroup] {
     let groups = Dictionary(grouping: notes) { note in
-        note.sectionID ?? (official ? "unknown:" + note.id : "legacy:" + note.chapter)
+        note.groupID(official: official)
     }
     return groups.map { id, items in
         let title = items.first(where: { !$0.chapter.isEmpty })?.chapter

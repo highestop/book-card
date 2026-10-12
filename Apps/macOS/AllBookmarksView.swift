@@ -4,6 +4,7 @@ import BookCardCore
 struct BookmarksState: Hashable {
     var query = ""
     var sourceID: String?
+    var sectionID: String?
 }
 
 struct AllBookmarksView: View {
@@ -11,8 +12,7 @@ struct AllBookmarksView: View {
     let openBook: (String) -> Void
     let backHome: () -> Void
     @Binding var state: BookmarksState
-    private var sources: [Book] { store.cache.noteBooks }
-    private var entries: [NoteEntry] { store.cache.bookmarks(sourceID: state.sourceID, search: state.query) }
+    private var entries: [NoteEntry] { store.cache.bookmarks(sourceID: state.sourceID, sectionID: state.sectionID, search: state.query) }
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 22) {
@@ -28,7 +28,7 @@ struct AllBookmarksView: View {
                     Spacer(minLength: 24)
                 }
                 HStack(spacing: 16) {
-                    SourcePicker(books: sources, selection: $state.sourceID).frame(width: 240)
+                    SourcePicker(cache: store.cache, sourceID: $state.sourceID, sectionID: $state.sectionID).frame(width: 260)
                     SearchBox(placeholder: "搜索书名、作者、文章、引用或想法", text: $state.query).frame(maxWidth: 400)
                     Spacer(minLength: 0)
                 }
