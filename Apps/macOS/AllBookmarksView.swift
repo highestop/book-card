@@ -1,18 +1,23 @@
 import SwiftUI
 import BookCardCore
 
-struct BookmarksState {
+struct BookmarksState: Hashable {
     var query = ""
+    var sourceID: String?
 }
 
 struct AllBookmarksView: View {
     @EnvironmentObject var store: AppStore
     let openBook: (String) -> Void
+    let backHome: () -> Void
     @Binding var state: BookmarksState
-    private var entries: [NoteEntry] { store.cache.allNotes.filter { $0.matches(state.query) } }
+    private var sources: [Book] { store.cache.noteBooks }
+    private var entries: [NoteEntry] { store.cache.bookmarks(sourceID: state.sourceID, search: state.query) }
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 22) {
+                Button(action: backHome) { Label("返回首页", systemImage: "arrow.left") }
+                    .buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(Paper.secondary)
                 HStack(alignment: .bottom) {
                     VStack(alignment: .leading, spacing: 10) {
                         Eyebrow(title: "A COLLECTION OF MOMENTS")
@@ -21,20 +26,24 @@ struct AllBookmarksView: View {
                             .font(.system(size: 12)).foregroundStyle(Paper.secondary)
                     }
                     Spacer(minLength: 24)
-                    SearchBox(placeholder: "搜索书名、文章、引用或想法", text: $state.query).frame(maxWidth: 300)
+                }
+                HStack(spacing: 16) {
+                    SourcePicker(books: sources, selection: $state.sourceID).frame(width: 240)
+                    SearchBox(placeholder: "搜索书名、作者、文章、引用或想法", text: $state.query).frame(maxWidth: 400)
+                    Spacer(minLength: 0)
                 }
             }.padding(.horizontal, 42).padding(.top, 34).padding(.bottom, 28)
             if entries.isEmpty {
-                EmptyBookmarks(title: store.cache.allNotes.isEmpty ? "等待第一张书签" : "没有找到相关书签", message: store.cache.allNotes.isEmpty ? "微信读书中的划线和想法会自动收进这里。" : "试试其他关键词。")
+                EmptyBookmarks(title: store.cache.allNotes.isEmpty ? "等待第一张书签" : "没有找到相关书签", message: store.cache.allNotes.isEmpty ? "微信读书中的划线和想法会自动收进这里。" : "试试其他关键词，或选择其他书名／公众号。")
             } else {
                 ScrollView {
                     WaterfallGrid(items: entries, minimumWidth: 300, spacing: 24) { entry in
                         BookmarkCard(entry: entry, openBook: { openBook(entry.book.id) })
                     }.padding(.horizontal, 42).padding(.top, 4).padding(.bottom, 40)
-                }.id(state.query)
+                }.id(state)
             }
             HStack {
-                Text("\(entries.count) 张书签 · 按标记时间排列")
+                Text("\(entries.count) 张书签 · 标记时间从新到旧")
                 Spacer()
                 Text("所有片刻，妥善收藏。")
             }.font(.system(size: 10)).foregroundStyle(Paper.secondary).padding(.horizontal, 42).padding(.vertical, 17)

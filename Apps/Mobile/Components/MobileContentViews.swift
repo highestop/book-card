@@ -110,54 +110,86 @@ struct MobileHomeView: View {
                     }.padding(20).foregroundStyle(MobilePaper.card).background(MobilePaper.green, in: RoundedRectangle(cornerRadius: 12))
                 }.buttonStyle(.plain)
                 if !entries.isEmpty {
-                    HStack {
-                        Text(index == 0 ? "最近一次标记" : "回顾书签")
-                        Spacer(); Text("\(index + 1) / \(entries.count)").monospacedDigit()
-                    }.font(.caption).foregroundStyle(.secondary)
+                    HStack(spacing: 12) {
+                        Text(selectedID == nil ? "最近一次标记" : "随机重逢").foregroundStyle(.secondary)
+                        Spacer(minLength: 0)
+                        if selectedID != nil {
+                            Button("回到最新") {
+                                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { selectedID = nil }
+                            }
+                        }
+                        Button(action: randomize) { Label("随机一张", systemImage: "shuffle") }
+                            .disabled(entries.count < 2).buttonStyle(.bordered)
+                    }.font(.caption)
                     MobileBookmarkCard(entry: entries[index], featured: true).id(entries[index].id)
                         .transition(.opacity.combined(with: .offset(x: reduceMotion ? 0 : 8)))
-                    HStack {
-                        Button { step(-1) } label: { Label("更新一张", systemImage: "arrow.left") }.disabled(index == 0)
-                        Spacer()
-                        Button { step(1) } label: { Label("往前翻阅", systemImage: "arrow.right") }.disabled(index == entries.count - 1)
-                    }.font(.subheadline).buttonStyle(.bordered)
-                    NavigationLink("打开《\(entries[index].book.title)》的全部书签") { MobileSourceNotesView(book: entries[index].book) }.font(.caption)
-                    if index > 0 { Button("回到最新") { selectedID = nil }.font(.caption) }
                 } else {
                     ContentUnavailableView(store.busy ? "正在整理书签…" : "等待第一张书签", systemImage: "bookmark", description: Text("在微信读书中划线或写下想法，回到这里自动同步。"))
                 }
             }.padding(24).frame(maxWidth: 760).frame(maxWidth: .infinity)
-        }.background(MobilePaper.background).navigationTitle("BookCard").navigationBarTitleDisplayMode(.inline)
+        }.background(MobilePaper.background)
             .refreshable { await store.refresh() }.task { await store.refreshIfNeeded() }
     }
-    private func step(_ delta: Int) {
-        guard entries.indices.contains(index + delta) else { return }
-        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { selectedID = entries[index + delta].id }
+    private func randomize() {
+        guard !entries.isEmpty, let next = store.cache.randomBookmark(excluding: entries[index].id) else { return }
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { selectedID = next.id }
     }
 }
 struct MobileBookmarksView: View {
     @EnvironmentObject private var store: AppStore
+    @Environment(\.dismiss) private var dismiss
     @State private var search = ""
-    private var entries: [NoteEntry] { store.cache.allNotes.filter { $0.matches(search) } }
+    @State private var sourceID: String?
+    private var entries: [NoteEntry] { store.cache.bookmarks(sourceID: sourceID, search: search) }
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                Text("\(store.cache.noteBooks.count) 本书与文集，\(store.cache.allNotes.count) 个值得留住的片刻。")
-                    .font(.subheadline).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 16) {
+                Button { dismiss() } label: { Label("返回首页", systemImage: "arrow.left") }.font(.subheadline)
+                Text("全部书签").font(.system(.largeTitle, design: .serif, weight: .medium))
+                Text("\(entries.count) 张书签 · 标记时间从新到旧").font(.caption).foregroundStyle(.secondary)
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 12) {
+                        SourcePicker(books: store.cache.noteBooks, selection: $sourceID).frame(width: 220)
+                        MobileSearchField(text: $search, placeholder: "书名、作者、文章、引用或想法").frame(minWidth: 300)
+                    }
+                    VStack(spacing: 12) {
+                        SourcePicker(books: store.cache.noteBooks, selection: $sourceID)
+                        MobileSearchField(text: $search, placeholder: "书名、作者、文章、引用或想法")
+                    }
+                }
+            }.padding(.horizontal, 24).padding(.top, 24)
+            ScrollView {
                 if entries.isEmpty {
-                    ContentUnavailableView("暂无匹配书签", systemImage: "bookmark", description: Text("试试其他关键词。"))
+                    ContentUnavailableView("暂无匹配书签", systemImage: "bookmark", description: Text("试试其他关键词，或选择其他书名／公众号。"))
                 } else {
                     WaterfallGrid(items: entries, minimumWidth: 300, spacing: 20) { entry in
                         MobileBookmarkCard(entry: entry)
-                    }
+                    }.padding(.horizontal, 24).padding(.bottom, 24)
                 }
-            }.padding(24)
-        }.id(search).background(MobilePaper.background).navigationTitle("全部书签")
-            .searchable(text: $search, prompt: "书名、文章、引用或想法")
-            .refreshable { await store.refresh() }
+            }.id("\(sourceID ?? "")|\(search)")
+                .refreshable { await store.refresh() }
+        }.background(MobilePaper.background).toolbar(.hidden, for: .navigationBar)
     }
 }
+
+struct MobileSearchField: View {
+    @Binding var text: String
+    let placeholder: String
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+            TextField(placeholder, text: $text).font(.subheadline).autocorrectionDisabled()
+                .textInputAutocapitalization(.never).accessibilityLabel(placeholder)
+            if !text.isEmpty {
+                Button { text = "" } label: { Image(systemName: "xmark.circle.fill") }
+                    .foregroundStyle(.secondary).accessibilityLabel("清除搜索")
+            }
+        }.padding(12).background(MobilePaper.card, in: RoundedRectangle(cornerRadius: 9))
+    }
+}
+
 struct MobileSourceNotesView: View {
+    @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var store: AppStore
     let book: Book
     @State private var search = ""
@@ -166,6 +198,9 @@ struct MobileSourceNotesView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
+                Button { dismiss() } label: { Label("返回", systemImage: "arrow.left") }.font(.subheadline)
+                Text(book.title).font(.system(.title, design: .serif, weight: .medium))
+                MobileSearchField(text: $search, placeholder: "引用、想法或章节")
                 HStack {
                     Picker(book.official ? "文章" : "章节", selection: $section) {
                         Text("全部\(book.official ? "文章" : "章节")").tag(nil as String?)
@@ -190,7 +225,7 @@ struct MobileSourceNotesView: View {
                     ContentUnavailableView(store.cache.details[book.id] == nil ? "等待同步这本书" : "暂无匹配笔记", systemImage: "bookmark")
                 }
             }.padding(24).frame(maxWidth: .infinity)
-        }.background(MobilePaper.background).navigationTitle(book.title).navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $search, prompt: "引用、想法或章节").refreshable { await store.refresh() }
+        }.background(MobilePaper.background).toolbar(.hidden, for: .navigationBar)
+            .refreshable { await store.refresh() }
     }
 }

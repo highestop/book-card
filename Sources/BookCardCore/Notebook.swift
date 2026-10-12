@@ -75,6 +75,16 @@ public extension NoteEntry {
     }
 }
 
+public extension Cache {
+    func bookmarks(sourceID: String? = nil, search: String = "") -> [NoteEntry] {
+        allNotes.filter { (sourceID == nil || $0.book.id == sourceID) && $0.matches(search) }
+    }
+    func randomBookmark(excluding currentID: String?) -> NoteEntry? {
+        let entries = allNotes
+        return entries.filter { $0.id != currentID }.randomElement() ?? entries.first
+    }
+}
+
 protocol NotesAPI {
     func library() async throws -> [Book]
     func detail(_ book: Book) async throws -> BookDetail
