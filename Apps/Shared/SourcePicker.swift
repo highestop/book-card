@@ -8,12 +8,10 @@ struct SourcePicker: View {
 
     var body: some View {
         Menu {
-            Picker("书名／公众号", selection: $selection) {
-                Text("所有书名／公众号").tag(nil as String?)
-                ForEach(books) { book in
-                    Text(book.title + (book.official ? " · 公众号" : (book.author.isEmpty ? "" : " · " + book.author)))
-                        .tag(Optional(book.id))
-                }
+            option("所有书名／公众号", id: nil)
+            Divider()
+            ForEach(books) { book in
+                option(book.title + (book.official ? " · 公众号" : (book.author.isEmpty ? "" : " · " + book.author)), id: book.id)
             }
         } label: {
             Label(selected?.title ?? "所有书名／公众号", systemImage: "line.3.horizontal.decrease")
@@ -26,6 +24,13 @@ struct SourcePicker: View {
         .accessibilityValue(selected?.title ?? "所有书名／公众号")
         .onChange(of: books.map(\.id), initial: true) { _, ids in
             if let selection, !ids.contains(selection) { self.selection = nil }
+        }
+    }
+
+    private func option(_ title: String, id: String?) -> some View {
+        Button { selection = id } label: {
+            if selection == id { Label(title, systemImage: "checkmark") }
+            else { Text(title) }
         }
     }
 }

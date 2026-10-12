@@ -82,26 +82,18 @@ struct BookmarkCard: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: featured ? 24 : 18) {
-            HStack(alignment: .top, spacing: 14) {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 6) {
-                        Image(systemName: entry.book.official ? "newspaper" : "book.closed")
-                        Text(entry.book.official ? "公众号 · " + entry.note.kind : "读书笔记 · " + entry.note.kind)
-                    }.font(.system(size: 10, weight: .medium)).foregroundStyle(color)
-                    Text(entry.chapterTitle).font(.system(size: featured ? 21 : 17, weight: .semibold, design: .serif))
-                        .fixedSize(horizontal: false, vertical: true)
-                    if let openBook {
-                        Button(action: openBook) {
-                            Text(entry.book.title).multilineTextAlignment(.leading)
-                        }.buttonStyle(.plain).help("打开此来源的全部书签")
-                            .font(.system(size: 12)).foregroundStyle(Paper.secondary)
-                    } else {
-                        Text(entry.book.title).font(.system(size: 12)).foregroundStyle(Paper.secondary)
-                    }
+            VStack(alignment: .leading, spacing: 6) {
+                Text(entry.chapterTitle).font(.system(size: featured ? 15 : 13, weight: .medium, design: .serif))
+                    .fixedSize(horizontal: false, vertical: true)
+                if let openBook {
+                    Button(action: openBook) {
+                        Text(entry.book.title).multilineTextAlignment(.leading)
+                    }.buttonStyle(.plain).help("打开此来源的全部书签")
+                        .font(.system(size: 11))
+                } else {
+                    Text(entry.book.title).font(.system(size: 11))
                 }
-                Spacer(minLength: 20)
-                Image(systemName: "quote.opening").font(.system(size: featured ? 29 : 22, weight: .light)).foregroundStyle(color.opacity(0.38)).padding(.top, 4)
-            }.padding(.trailing, 26)
+            }.foregroundStyle(Paper.secondary).padding(.trailing, featured ? 38 : 30)
             Rectangle().fill(Paper.line.opacity(0.7)).frame(height: 1)
             if let quote = entry.quoteText {
                 Text(featured || expanded ? quote : NoteText.excerpt(quote, limit: 220)).font(.system(size: featured ? 23 : 17, weight: .regular, design: .serif))
@@ -111,7 +103,7 @@ struct BookmarkCard: View {
             if let thought = entry.thoughtText {
                 VStack(alignment: .leading, spacing: 10) {
                     Label("我的想法", systemImage: "pencil.tip").font(.system(size: 10, weight: .medium)).foregroundStyle(Paper.rust)
-                    Text(featured || expanded ? thought : NoteText.excerpt(thought, limit: 160)).font(.system(size: featured ? 14 : 13)).lineSpacing(6)
+                    Text(featured || expanded ? thought : NoteText.excerpt(thought, limit: 160)).font(.system(size: featured ? 16 : 15)).lineSpacing(6)
                         .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                 }.padding(18).frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color(hex: 0xF5F0E6), in: RoundedRectangle(cornerRadius: 8))

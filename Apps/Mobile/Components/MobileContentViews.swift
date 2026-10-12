@@ -35,19 +35,17 @@ struct MobileBookmarkCard: View {
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            VStack(alignment: .leading, spacing: 8) {
-                Label((entry.book.official ? "公众号 · " : "读书笔记 · ") + entry.note.kind, systemImage: "bookmark")
-                    .font(.caption2).foregroundStyle(MobilePaper.accent(entry.book.id))
-                Text(entry.chapterTitle).font(.system(featured ? .title3 : .headline, design: .serif, weight: .semibold))
-                    .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(entry.chapterTitle).font(.system(featured ? .subheadline : .caption, design: .serif, weight: .medium))
+                    .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 if linkSource {
                     NavigationLink { MobileSourceNotesView(book: entry.book) } label: {
-                        Text(entry.book.title).font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.leading)
+                        Text(entry.book.title).font(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.leading)
                     }.buttonStyle(.plain)
                 } else {
-                    Text(entry.book.title).font(.subheadline).foregroundStyle(.secondary)
+                    Text(entry.book.title).font(.caption2).foregroundStyle(.secondary)
                 }
-            }.padding(.trailing, 24)
+            }.padding(.trailing, 32)
             Divider()
             if let quote = entry.quoteText {
                 Text(featured || expanded ? quote : NoteText.excerpt(quote, limit: 220))
@@ -58,7 +56,7 @@ struct MobileBookmarkCard: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Label("我的想法", systemImage: "pencil.tip").font(.caption2).foregroundStyle(MobilePaper.rust)
                     Text(featured || expanded ? thought : NoteText.excerpt(thought, limit: 160))
-                        .font(.subheadline).lineSpacing(6).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+                        .font(.body).lineSpacing(6).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                 }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
                     .background(MobilePaper.background, in: RoundedRectangle(cornerRadius: 8))
             }
