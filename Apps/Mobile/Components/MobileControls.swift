@@ -9,42 +9,30 @@ private struct MobileControls: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Button("立即同步") { Task { await store.refresh() } }.disabled(!store.hasKey)
-                        Button("完整校验所有笔记") { Task { await store.refresh(force: true) } }.disabled(!store.hasKey)
-                        Divider()
-                        Button(store.hasKey ? "更换 Key" : "输入 Key") { showKey = true }
-                        if store.hasKey {
-                            Button("移除 Key（保留离线数据）") { store.removeKey() }
-                        }
-                        Button("清除所有本地数据…", role: .destructive) { confirmDelete = true }
-                    } label: { Label("设置", systemImage: "gearshape") }
-                        .disabled(store.busy)
-                }
-            }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                HStack(spacing: 8) {
-                    if store.busy {
-                        ProgressView().controlSize(.small)
-                        Text(store.status).lineLimit(1)
-                    } else if !store.hasKey {
-                        Text("离线模式")
-                    } else if let date = store.cache.notesSynced {
-                        Text("已同步 · \(date.formatted(date: .omitted, time: .shortened))")
-                    } else {
-                        Text("尚未完成同步")
+            .overlay(alignment: .topTrailing) {
+                Menu {
+                    Text(store.busy ? store.status : (store.hasKey ? store.cache.notesSynced.map { "最近同步：" + readingDate($0) } ?? "等待同步" : "离线书签"))
+                    if store.error != nil { Button("查看同步错误") { showError = true } }
+                    Divider()
+                    Button("立即同步") { Task { await store.refresh() } }.disabled(!store.hasKey || store.busy)
+                    Button("完整校验所有笔记") { Task { await store.refresh(force: true) } }.disabled(!store.hasKey || store.busy)
+                    Divider()
+                    Button(store.hasKey ? "更换 Key" : "输入 Key") { showKey = true }.disabled(store.busy)
+                    if store.hasKey {
+                        Button("移除 Key（保留离线数据）") { store.removeKey() }.disabled(store.busy)
                     }
-                    Spacer(minLength: 0)
-                    if store.error != nil {
-                        Button { showError = true } label: {
-                            Label("查看同步错误", systemImage: "exclamationmark.circle.fill").labelStyle(.iconOnly)
-                        }.tint(.red)
-                    }
-                }
-                .font(.caption).foregroundStyle(.secondary)
-                .padding(.horizontal, 16).padding(.vertical, 10).background(.bar)
+                    Button("清除所有本地数据…", role: .destructive) { confirmDelete = true }.disabled(store.busy)
+                } label: {
+                    HStack(spacing: 6) {
+                        if store.busy { ProgressView().controlSize(.small) }
+                        Image(systemName: "slider.horizontal.3")
+                            .overlay(alignment: .topTrailing) {
+                                if store.error != nil { Circle().fill(MobilePaper.rust).frame(width: 6, height: 6).offset(x: 3, y: -3) }
+                            }
+                    }.frame(minWidth: 44, minHeight: 44)
+                        .background(MobilePaper.background.opacity(0.94), in: RoundedRectangle(cornerRadius: 10))
+                }.accessibilityLabel("连接与缓存设置")
+                    .padding(.trailing, 16).padding(.top, 8)
             }
             .confirmationDialog("清除所有本地阅读数据？", isPresented: $confirmDelete, titleVisibility: .visible) {
                 Button("清除本地数据", role: .destructive) { store.deleteData() }

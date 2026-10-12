@@ -31,12 +31,13 @@ import AppKit
             try render(ContentView(initialPage: page).environmentObject(store), name: name, width: width, height: height)
         }
         try render(ContentView(initialPage: .bookmarks).environmentObject(store), name: "cards-small", width: 860, height: 940)
+        try render(ContentView(initialPage: .bookmarks, initialBookmarks: BookmarksState(sourceID: books[3].id)).environmentObject(store), name: "cards-filtered", width: 1180, height: 940)
         try render(ContentView(initialPage: .bookmarks, initialBookmarks: BookmarksState(query: "不存在的文字")).environmentObject(store), name: "no-results", width: 860, height: 640)
         let empty = AppStore(preview: Cache())
         try render(ContentView().environmentObject(empty), name: "welcome", width: 1000, height: 800)
         let longNote = Note(id: "long", kind: "想法", quote: String(repeating: "一段值得停下来的文字。\n", count: 25), thought: "长笔记应当可以完整展开，保留每一段原文。", chapter: "很长的一章", created: now.timeIntervalSince1970)
         try render(BookmarkCard(entry: NoteEntry(book: books[0], note: longNote), featured: true).padding(30).background(Paper.background), name: "long-card", width: 640, height: 1800)
-        print("Rendered 8 synthetic previews in build/previews")
+        print("Rendered 9 synthetic previews in build/previews")
     }
     @MainActor static func render<V: View>(_ view: V, name: String, width: CGFloat, height: CGFloat) throws {
         let root = view.frame(width: width, height: height).environment(\.locale, Locale(identifier: "zh_CN"))

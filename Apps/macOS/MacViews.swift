@@ -17,22 +17,23 @@ struct ContentView: View {
     }
     var body: some View {
         VStack(spacing: 0) {
-            header
-            Rectangle().fill(Paper.line).frame(height: 1)
             Group {
                 if !store.hasKey && store.cache.books.isEmpty { KeyView(initial: true) }
                 else {
                     switch page {
                     case .home: HomeView(openBookmarks: { navigate(.bookmarks) }, openBook: { navigate(.book($0)) })
-                    case .bookmarks: AllBookmarksView(openBook: { navigate(.book($0)) }, state: $bookmarksState)
+                    case .bookmarks: AllBookmarksView(openBook: { navigate(.book($0)) }, backHome: { navigate(.home) }, state: $bookmarksState)
                     case .book(let id):
                         if let book = store.cache.books.first(where: { $0.id == id }) {
                             BookNotesView(book: book, back: { navigate(.bookmarks) }).id(id)
-                        } else { AllBookmarksView(openBook: { navigate(.book($0)) }, state: $bookmarksState) }
+                        } else { AllBookmarksView(openBook: { navigate(.book($0)) }, backHome: { navigate(.home) }, state: $bookmarksState) }
                     }
                 }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
                 .id(page).transition(.opacity.combined(with: .offset(y: reduceMotion ? 0 : 8)))
+        }
+        .overlay(alignment: .topTrailing) {
+            LibraryMenu(showKey: $showKey, confirmDelete: $confirmDelete).padding(.trailing, 24).padding(.top, 14)
         }
         .background(Paper.background).foregroundStyle(Paper.ink).tint(Paper.green)
         .preferredColorScheme(.light)
@@ -49,62 +50,47 @@ struct ContentView: View {
     private func navigate(_ destination: LibraryPage) {
         withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.24)) { page = destination }
     }
-    private var header: some View {
-        HStack(spacing: 24) {
-            HStack(spacing: 9) {
-                Image(systemName: "bookmark.fill").font(.system(size: 21)).foregroundStyle(Paper.green)
-                Text("BookCard").font(.system(size: 20, weight: .semibold, design: .serif))
-            }.padding(.trailing, 24)
-            navButton("最近书签", icon: "rectangle.stack", destination: .home, active: page == .home)
-            navButton("全部书签", icon: "square.grid.2x2", destination: .bookmarks, active: page != .home)
-            Spacer(minLength: 8)
-            SyncStatusView()
-            Menu {
-                Button("立即同步") { Task { await store.refresh() } }.disabled(!store.hasKey || store.busy)
-                Button("完整校验所有笔记") { Task { await store.refresh(force: true) } }.disabled(!store.hasKey || store.busy)
-                Divider()
-                Button(store.hasKey ? "更换微信读书 Key" : "连接微信读书") { showKey = true }
-                Button("移除 Key，保留离线数据") { store.removeKey() }.disabled(!store.hasKey)
-                Button("清除所有本地数据…", role: .destructive) { confirmDelete = true }
-            } label: { Image(systemName: "slider.horizontal.3").font(.system(size: 17)).padding(8) }
-                .menuStyle(.borderlessButton).fixedSize().disabled(store.busy).help("连接与缓存设置")
-        }.padding(.horizontal, 32).padding(.top, 24).padding(.bottom, 18)
-    }
-    private func navButton(_ title: String, icon: String, destination: LibraryPage, active: Bool) -> some View {
-        Button { navigate(destination) } label: {
-            Label(title, systemImage: icon).font(.system(size: 13, weight: active ? .semibold : .regular))
-                .foregroundStyle(active ? Paper.green : Paper.secondary)
-                .padding(.vertical, 9)
-                .overlay(alignment: .bottom) { if active { Capsule().fill(Paper.green).frame(height: 2).offset(y: 8) } }
-        }.buttonStyle(.plain)
-    }
 }
 
-struct SyncStatusView: View {
+struct LibraryMenu: View {
     @EnvironmentObject var store: AppStore
+    @Binding var showKey: Bool
+    @Binding var confirmDelete: Bool
     @State private var showError = false
+    private var summary: String {
+        if store.busy { return store.status }
+        if store.error != nil { return "同步未完成" }
+        if !store.hasKey { return "离线书签" }
+        return store.cache.notesSynced.map { "最近同步：" + readingDate($0) } ?? "等待同步"
+    }
     var body: some View {
-        HStack(spacing: 7) {
-            if store.busy {
-                ProgressView().controlSize(.mini)
-                Text(store.status).lineLimit(1).truncationMode(.middle).frame(maxWidth: 210).help(store.status)
-            } else if let error = store.error {
-                Button { showError.toggle() } label: {
-                    Label("同步未完成", systemImage: "exclamationmark.circle").foregroundStyle(Paper.rust)
-                }.buttonStyle(.plain)
-                    .popover(isPresented: $showError) {
-                        VStack(alignment: .leading, spacing: 16) {
-                            Text("已缓存的笔记仍可阅读").font(.headline)
-                            ScrollView { Text(error).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }.frame(maxHeight: 200)
-                            Button("重试同步") { showError = false; Task { await store.refresh() } }.disabled(!store.hasKey)
-                        }.padding(24).frame(width: 350)
+        Menu {
+            Text(summary)
+            if store.error != nil { Button("查看同步错误") { showError = true } }
+            Divider()
+            Button("立即同步") { Task { await store.refresh() } }.disabled(!store.hasKey || store.busy)
+            Button("完整校验所有笔记") { Task { await store.refresh(force: true) } }.disabled(!store.hasKey || store.busy)
+            Divider()
+            Button(store.hasKey ? "更换微信读书 Key" : "连接微信读书") { showKey = true }.disabled(store.busy)
+            Button("移除 Key，保留离线数据") { store.removeKey() }.disabled(!store.hasKey || store.busy)
+            Button("清除所有本地数据…", role: .destructive) { confirmDelete = true }.disabled(store.busy)
+        } label: {
+            HStack(spacing: 8) {
+                if store.busy { ProgressView().controlSize(.mini) }
+                Image(systemName: "slider.horizontal.3").font(.system(size: 17))
+                    .overlay(alignment: .topTrailing) {
+                        if store.error != nil { Circle().fill(Paper.rust).frame(width: 6, height: 6).offset(x: 3, y: -3) }
                     }
-            } else {
-                Circle().fill(store.hasKey ? Paper.green : Paper.secondary).frame(width: 5, height: 5)
-                Text(store.hasKey ? (store.cache.notesSynced == nil ? "等待同步" : "已同步到本机") : "离线书签")
-                    .help(store.cache.notesSynced.map { "最近同步：" + readingDate($0) } ?? "连接后自动同步读书笔记")
+            }.padding(10).background(Paper.background.opacity(0.94), in: RoundedRectangle(cornerRadius: 9))
+        }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            .help("连接与缓存设置 · " + summary).accessibilityLabel("连接与缓存设置").accessibilityValue(summary)
+            .popover(isPresented: $showError) {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("已缓存的笔记仍可阅读").font(.headline)
+                    ScrollView { Text(store.error ?? "").textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading) }.frame(maxHeight: 200)
+                    Button("重试同步") { showError = false; Task { await store.refresh() } }.disabled(!store.hasKey || store.busy)
+                }.padding(24).frame(width: 350)
             }
-        }.font(.system(size: 11)).foregroundStyle(Paper.secondary)
     }
 }
 

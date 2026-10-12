@@ -27,26 +27,19 @@ struct HomeView: View {
                 HStack(alignment: .top, spacing: 32) {
                     VStack(alignment: .leading, spacing: 17) {
                         HStack {
-                            Label(index == 0 ? "最近一次标记" : "回顾书签", systemImage: "bookmark")
+                            Label(selectedID == nil ? "最近一次标记" : "随机重逢", systemImage: selectedID == nil ? "bookmark" : "shuffle")
                                 .font(.system(size: 11, weight: .medium)).foregroundStyle(Paper.green)
                             Spacer()
-                            if !entries.isEmpty { Text("\(index + 1) / \(entries.count)").monospacedDigit().font(.system(size: 11)).foregroundStyle(Paper.secondary) }
+                            if selectedID != nil {
+                                Button("回到最新") { withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { selectedID = nil } }
+                                    .buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(Paper.secondary)
+                            }
+                            Button(action: randomize) { Label("随机一张", systemImage: "shuffle") }
+                                .font(.system(size: 11)).disabled(entries.count < 2).buttonStyle(QuietButton())
                         }
                         if let entry {
                             BookmarkCard(entry: entry, featured: true, openBook: { openBook(entry.book.id) })
                                 .id(entry.id).transition(.opacity.combined(with: .offset(x: reduceMotion ? 0 : 10)))
-                            HStack {
-                                Button { step(-1) } label: { Label("更新一张", systemImage: "arrow.left") }
-                                    .disabled(index == 0).buttonStyle(QuietButton())
-                                Spacer()
-                                if index > 0 {
-                                    Button("回到最新") { withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { selectedID = nil } }
-                                        .buttonStyle(.plain).foregroundStyle(Paper.secondary)
-                                }
-                                Spacer()
-                                Button { step(1) } label: { Label("往前翻阅", systemImage: "arrow.right") }
-                                    .disabled(index >= entries.count - 1).buttonStyle(QuietButton())
-                            }.font(.system(size: 11))
                         } else {
                             EmptyBookmarks(title: store.busy ? "正在整理你的书签…" : "第一张书签，等你留下", message: store.busy ? "笔记会逐本存入本机，稍等片刻。" : "在微信读书中划线或写下想法，\n回到这里便会自动同步。")
                                 .frame(minHeight: 340).background(Paper.card, in: RoundedRectangle(cornerRadius: 12))
@@ -61,10 +54,9 @@ struct HomeView: View {
             }.padding(42).frame(maxWidth: 1180).frame(maxWidth: .infinity)
         }.task { await store.refreshIfNeeded() }
     }
-    private func step(_ delta: Int) {
-        let destination = index + delta
-        guard entries.indices.contains(destination) else { return }
-        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.22)) { selectedID = entries[destination].id }
+    private func randomize() {
+        guard let next = store.cache.randomBookmark(excluding: entry?.id) else { return }
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.22)) { selectedID = next.id }
     }
     private var collectionDoor: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -99,6 +91,6 @@ struct HomeView: View {
                     .font(.system(size: 12, weight: .medium)).padding(14).foregroundStyle(Paper.card)
                     .background(Paper.green, in: RoundedRectangle(cornerRadius: 8))
             }.buttonStyle(.plain)
-        }.padding(24).background(Color(hex: 0xECEDE3), in: RoundedRectangle(cornerRadius: 12)).padding(.top, 31)
+        }.padding(24).background(Color(hex: 0xECEDE3), in: RoundedRectangle(cornerRadius: 12)).padding(.top, 51)
     }
 }

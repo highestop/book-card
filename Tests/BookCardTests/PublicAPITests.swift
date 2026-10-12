@@ -4,6 +4,46 @@ import BookCardCore
 
 // Import the package as an app does, without granting access to its internals.
 final class PublicAPITests: XCTestCase {
+    func testSourceFilterCombinesWithSearchAndPreservesNewestFirstOrder() {
+        let book = Book(id: "book", title: "同名来源", author: "作者")
+        let account = Book(id: "MP_WXS_account", title: "同名来源")
+        let cache = Cache(books: [book, account], details: [
+            book.id: BookDetail(notes: [
+                Note(id: "old", kind: "划线", quote: "Reading slowly", chapter: "第一章", created: 10),
+                Note(id: "new", kind: "想法", quote: "READING", thought: "Slowly", chapter: "第二章", created: 30),
+                Note(id: "undated", kind: "划线", quote: "Reading slowly")
+            ], synced: Date()),
+            account.id: BookDetail(notes: [Note(id: "article", kind: "划线", quote: "Reading slowly", created: 20)], synced: Date())
+        ])
+        XCTAssertEqual(cache.bookmarks().map(\.note.id), ["new", "article", "old", "undated"])
+        XCTAssertEqual(cache.bookmarks(sourceID: book.id, search: "reading SLOWLY").map(\.note.id), ["new", "old", "undated"])
+        XCTAssertEqual(cache.bookmarks(sourceID: account.id).map(\.note.id), ["article"])
+        XCTAssertTrue(cache.bookmarks(sourceID: account.id, search: "作者").isEmpty)
+    }
+
+    func testSearchRequiresEveryTermButAllowsDifferentFields() {
+        let entry = NoteEntry(book: Book(id: "book", title: "山间来信", author: "Alice"), note:
+            Note(id: "note", kind: "想法", quote: "<p>Read &amp; reflect</p><img src='hidden-word.png'>", thought: "慢慢生活", chapter: "第二章", created: 1791772200))
+        XCTAssertTrue(entry.matches("  山间 alice\n第二章 REFLECT 慢慢  "))
+        XCTAssertTrue(entry.matches("Read & reflect"))
+        XCTAssertFalse(entry.matches("reflect 不存在"))
+        XCTAssertFalse(entry.matches("hidden-word"))
+        XCTAssertFalse(entry.matches("1791772200"))
+        XCTAssertTrue(entry.matches(" \n "))
+    }
+
+    func testRandomBookmarkAvoidsCurrentAndHandlesEmptyOrSingleNote() {
+        XCTAssertNil(Cache().randomBookmark(excluding: nil))
+        let book = Book(id: "book", title: "Book")
+        let one = Note(id: "one", kind: "划线", quote: "First", created: 10)
+        var cache = Cache(books: [book], details: [book.id: BookDetail(notes: [one], synced: Date())])
+        let current = cache.allNotes.first!.id
+        XCTAssertEqual(cache.randomBookmark(excluding: current)?.id, current)
+        cache.details[book.id]?.notes.append(Note(id: "two", kind: "划线", quote: "Second", created: 20))
+        for _ in 0..<10 { XCTAssertEqual(cache.randomBookmark(excluding: current)?.note.id, "two") }
+        XCTAssertTrue(Set(cache.allNotes.map(\.id)).contains(cache.randomBookmark(excluding: "removed")!.id))
+    }
+
     func testRecentBookmarkCardsAcrossSources() {
         let book = Book(id: "a", title: "Alpha")
         let official = Book(id: "MP_WXS_test", title: "公众号")
