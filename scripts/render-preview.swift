@@ -38,9 +38,9 @@ import AppKit
             ("filter-articles", books[3].id, "2", 640.0, 500.0),
             ("filter-narrow", books[3].id, "1", 360.0, 620.0)
         ] {
-            try render(SourceFilterPanel(cache: cache, sourceID: .constant(source), sectionID: .constant(section), close: {}), name: name, width: width, height: height)
+            try render(SourceFilterPanel(cache: cache, sourceID: .constant(source), sectionID: .constant(section), apply: {}, close: {}), name: name, width: width, height: height)
         }
-        try render(SourceFilterPanel(cache: cache, sourceID: .constant(nil), sectionID: .constant(nil), close: {}), name: "filter-all", width: 640, height: 500)
+        try render(SourceFilterPanel(cache: cache, sourceID: .constant(nil), sectionID: .constant(nil), apply: {}, close: {}), name: "filter-all", width: 640, height: 500)
         try render(ContentView(initialPage: .bookmarks, initialBookmarks: BookmarksState(query: "不存在的文字")).environmentObject(store), name: "no-results", width: 860, height: 640)
         let empty = AppStore(preview: Cache())
         try render(ContentView().environmentObject(empty), name: "welcome", width: 1000, height: 800)

@@ -6,12 +6,17 @@ struct SourcePicker: View {
     @Binding var sourceID: String?
     @Binding var sectionID: String?
     @State private var presented = false
+    @State private var draftSourceID: String?
+    @State private var draftSectionID: String?
     private var selected: Book? { cache.noteBooks.first { $0.id == sourceID } }
     private var groups: [NoteGroup] { selected.map { cache.noteGroups(for: $0) } ?? [] }
     private var chapter: String? { groups.first { $0.id == sectionID }?.title }
 
     var body: some View {
-        Button { presented = true } label: {
+        Button {
+            draftSourceID = sourceID; draftSectionID = sectionID
+            presented = true
+        } label: {
             HStack(spacing: 9) {
                 Image(systemName: "line.3.horizontal.decrease")
                 VStack(alignment: .leading, spacing: 3) {
@@ -27,7 +32,10 @@ struct SourcePicker: View {
             .accessibilityLabel("筛选书名、公众号、章节或文章")
             .accessibilityValue([selected?.title ?? "所有书名／公众号", chapter].compactMap { $0 }.joined(separator: "，"))
             .popover(isPresented: $presented, arrowEdge: .bottom) {
-                SourceFilterPanel(cache: cache, sourceID: $sourceID, sectionID: $sectionID, close: { presented = false })
+                SourceFilterPanel(cache: cache, sourceID: $draftSourceID, sectionID: $draftSectionID, apply: {
+                    sourceID = draftSourceID; sectionID = draftSectionID
+                    presented = false
+                }, close: { presented = false })
                     #if os(macOS)
                     .frame(width: 640, height: 500)
                     #else
@@ -49,6 +57,7 @@ struct SourceFilterPanel: View {
     let cache: Cache
     @Binding var sourceID: String?
     @Binding var sectionID: String?
+    let apply: () -> Void
     let close: () -> Void
     private let ink = Color(red: 0.16, green: 0.23, blue: 0.20)
     private let green = Color(red: 0.25, green: 0.38, blue: 0.32)
@@ -67,11 +76,11 @@ struct SourceFilterPanel: View {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("选择阅读来源").font(.headline)
-                    Text("从一本书，或一篇文章开始").font(.caption).foregroundStyle(.secondary)
+                    Text("选好后，点击「完成」应用筛选").font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Button(action: close) { Image(systemName: "xmark").frame(width: 32, height: 32) }
-                    .buttonStyle(.plain).accessibilityLabel("关闭筛选")
+                    .buttonStyle(.plain).accessibilityLabel("取消筛选修改")
             }.padding(20)
             Divider()
             GeometryReader { geometry in
@@ -112,14 +121,20 @@ struct SourceFilterPanel: View {
             }
             Divider()
             HStack {
-                Text("已选范围 · \(count) 张书签").font(.caption).foregroundStyle(.secondary)
+                Text("当前选择 · \(count) 张书签").font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                Button(action: close) {
+                Button(action: apply) {
                     Text("完成").font(.subheadline.weight(.medium)).padding(.horizontal, 22).padding(.vertical, 10)
                         .foregroundStyle(.white).background(green, in: RoundedRectangle(cornerRadius: 8))
                 }.buttonStyle(.plain)
             }.padding(16)
         }.foregroundStyle(ink).background(paper)
+            .onChange(of: sources.map(\.id), initial: true) { _, ids in
+                if let sourceID, !ids.contains(sourceID) { self.sourceID = nil; sectionID = nil }
+            }
+            .onChange(of: groups.map(\.id), initial: true) { _, ids in
+                if let sectionID, !ids.contains(sectionID) { self.sectionID = nil }
+            }
     }
 
     private func sourceGroup(_ title: String, books: [Book]) -> some View {
@@ -159,7 +174,7 @@ struct SourceFilterPanel: View {
     }
 
     private func chapterRow(_ title: String, count: Int, id: String?) -> some View {
-        Button { sectionID = id; close() } label: {
+        Button { sectionID = id } label: {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(title).font(.subheadline).fixedSize(horizontal: false, vertical: true)
