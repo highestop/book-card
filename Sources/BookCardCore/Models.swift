@@ -33,7 +33,7 @@ public struct NoteGroup: Identifiable {
     public let title: String
     public let notes: [Note]
 }
-func groupedNotes(_ notes: [Note], official: Bool) -> [NoteGroup] {
+public func groupedNotes(_ notes: [Note], official: Bool) -> [NoteGroup] {
     let groups = Dictionary(grouping: notes) { note in
         note.sectionID ?? (official ? "unknown:" + note.id : "legacy:" + note.chapter)
     }
@@ -66,10 +66,11 @@ func articleID(bookID: String, record: Object, thought: Bool) -> String? {
     return result.isEmpty ? nil : result
 }
 public struct BookDetail: Codable {
-    public init(progress: Int? = nil, seconds: Int? = nil, progressError: String? = nil, notes: [Note], synced: Date) {
+    public init(progress: Int? = nil, seconds: Int? = nil, progressError: String? = nil, notes: [Note], synced: Date, stamp: NotebookStamp? = nil) {
         self.progress = progress; self.seconds = seconds; self.progressError = progressError
-        self.notes = notes; self.synced = synced
+        self.notes = notes; self.synced = synced; self.stamp = stamp
     }
+    public var stamp: NotebookStamp?
     public var highlightCount: Int { notes.filter { $0.kind == "划线" }.count }
     public var thoughtCount: Int { notes.filter { $0.kind == "想法" }.count }
     public var progress: Int?
@@ -78,6 +79,7 @@ public struct BookDetail: Codable {
     public var notes: [Note]
     public var synced: Date
 }
+// Retained only for lossless migration of existing databases and JSON archives.
 public struct ReadingProgress: Codable {
     public init(percent: Int, seconds: Int? = nil, finishedAt: Double? = nil, synced: Date, updatedAt: Double? = nil) {
         self.percent = percent; self.seconds = seconds; self.finishedAt = finishedAt
@@ -89,17 +91,6 @@ public struct ReadingProgress: Codable {
     public var synced: Date
     public var updatedAt: Double?
 }
-public enum BookSort: String, CaseIterable, Identifiable {
-    case progressDescending = "阅读进度：从高到低"
-    case progressAscending = "阅读进度：从低到高"
-    public var id: String { rawValue }
-    public static func restored(_ value: String) -> BookSort { BookSort(rawValue: value) ?? .progressDescending }
-}
-public func durationLabel(_ progress: ReadingProgress) -> String? {
-    guard let seconds = progress.seconds, seconds > 0 else { return nil }
-    if seconds < 60 { return "阅读时长 \(seconds) 秒" }
-    return "阅读时长 \(seconds / 3600) 小时 \((seconds % 3600) / 60) 分钟"
-}
 public struct NoteEntry: Identifiable {
     public init(book: Book, note: Note) { self.book = book; self.note = note }
     public let book: Book
@@ -110,12 +101,6 @@ public struct Cache: Codable {
     public init(books: [Book] = [], details: [String: BookDetail] = [:], synced: Date? = nil, reading: [String: ReadingProgress]? = nil, readingSynced: Date? = nil, notesSynced: Date? = nil) {
         self.books = books; self.details = details; self.synced = synced
         self.reading = reading; self.readingSynced = readingSynced; self.notesSynced = notesSynced
-    }
-    public var bookCount: Int { books.filter { !$0.official }.count }
-    public func readingBooks(search: String = "", sort: BookSort = .progressDescending) -> [Book] {
-        sortedBooks(by: sort).filter {
-            search.isEmpty || $0.title.localizedCaseInsensitiveContains(search) || $0.author.localizedCaseInsensitiveContains(search)
-        }
     }
     public func noteSources(search: String = "") -> [Book] {
         books.filter {
@@ -136,30 +121,19 @@ public struct Cache: Codable {
     public var reading: [String: ReadingProgress]?
     public var readingSynced: Date?
     public var notesSynced: Date?
-    public func sortedBooks(by sort: BookSort) -> [Book] {
-        books.filter { !$0.official }.sorted { a, b in
-            let left = reading?[a.id], right = reading?[b.id]
-            func compare(_ lhs: Double?, _ rhs: Double?, ascending: Bool = false) -> Bool? {
-                if lhs == nil && rhs != nil { return false }
-                if lhs != nil && rhs == nil { return true }
-                if let lhs, let rhs, lhs != rhs { return ascending ? lhs < rhs : lhs > rhs }
-                return nil
+    public var noteBooks: [Book] {
+        books.filter { (details[$0.id]?.notes.count ?? 0) > 0 || ($0.highlights ?? 0) + ($0.thoughts ?? 0) > 0 }
+            .sorted {
+                let a = details[$0.id]?.notes.compactMap(\.created).max() ?? Double($0.recent)
+                let b = details[$1.id]?.notes.compactMap(\.created).max() ?? Double($1.recent)
+                return a == b ? $0.id < $1.id : a > b
             }
-            let order = compare(left.map { Double($0.percent) }, right.map { Double($0.percent) }, ascending: sort == .progressAscending)
-            if let order { return order }
-            let names = a.title.localizedStandardCompare(b.title)
-            return names == .orderedSame ? a.id < b.id : names == .orderedAscending
-        }
-    }
-    public var finishedBooks: [Book] {
-        books.filter { !$0.official && reading?[$0.id]?.percent == 100 }
-            .sorted { (reading?[$0.id]?.finishedAt ?? 0) > (reading?[$1.id]?.finishedAt ?? 0) }
     }
     public var allNotes: [NoteEntry] {
         books.flatMap { book in (details[book.id]?.notes ?? []).map { NoteEntry(book: book, note: $0) } }
             .sorted {
-                if $0.note.created == $1.note.created { return $0.id < $1.id }
-                return ($0.note.created ?? 0) > ($1.note.created ?? 0)
+                let a = $0.note.created ?? 0, b = $1.note.created ?? 0
+                return a == b ? $0.id < $1.id : a > b
             }
     }
 }

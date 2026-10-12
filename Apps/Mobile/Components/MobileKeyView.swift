@@ -13,8 +13,8 @@ struct MobileKeyView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     Image(systemName: "book.closed.fill").font(.system(size: 48)).foregroundStyle(.tint)
-                    Text(initial ? "欢迎使用 BookCard" : "连接微信读书").font(.largeTitle.bold())
-                    Text("输入微信读书 Skill 的 API Key，即可查看你的阅读进度、划线和想法。")
+                    Text(initial ? "把读过的片刻，留下来。" : "连接微信读书").font(.largeTitle.bold())
+                    Text("输入微信读书 Skill 的 API Key，把你的划线与想法收成书签。")
                         .foregroundStyle(.secondary)
                     Link("打开微信读书官方 Key 页面 ↗", destination: URL(string: "https://weread.qq.com/r/weread-skills")!)
                     SecureField("粘贴 wrk- 开头的 Key", text: $key)
@@ -27,7 +27,7 @@ struct MobileKeyView: View {
                     Button { connect() } label: {
                         HStack {
                             if store.busy { ProgressView().tint(.white) }
-                            Text(store.busy ? "连接中…" : "连接并读取数据")
+                            Text(store.busy ? "连接中…" : "连接并同步书签")
                         }.frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent).controlSize(.large)

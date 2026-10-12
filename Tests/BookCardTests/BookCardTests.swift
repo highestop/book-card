@@ -20,26 +20,22 @@ final class BookCardTests: XCTestCase {
         XCTAssertEqual(SwiftDataStore.profile("test-key-a"), SwiftDataStore.profile("test-key-a"))
         XCTAssertFalse(SwiftDataStore.profile("test-key-a").contains("test-key"))
     }
-    func testOfflineCachePreservesOriginalNotesAndProgressUnits() throws {
+    func testOfflineCachePreservesOriginalNotes() throws {
         let original = "第一段\n\n第二段  with spaces"
-        let detail = BookDetail(progress: 1, seconds: 61, notes: [Note(id: "thought:1", kind: "想法", quote: "", thought: original, chapter: "", created: nil)], synced: Date())
+        let detail = BookDetail(notes: [Note(id: "thought:1", kind: "想法", quote: "", thought: original, chapter: "", created: nil)], synced: Date())
         let cache = Cache(details: ["book": detail])
         let data = try JSONEncoder().encode(cache)
         let decoded = try JSONDecoder().decode(Cache.self, from: data)
-        XCTAssertEqual(decoded.details["book"]?.progress, 1)
-        XCTAssertEqual(decoded.details["book"]?.seconds, 61)
         XCTAssertEqual(decoded.details["book"]?.notes.first?.thought, original)
         XCTAssertNil(decoded.details["book"]?.notes.first?.created)
     }
-    func testFinishedFilterAndLegacyCache() throws {
-        let legacy = Data("{\"books\":[],\"details\":{}}".utf8)
-        XCTAssertNil(try JSONDecoder().decode(Cache.self, from: legacy).reading)
-        let books = ["done", "started", "unknown"].map { Book(id: $0, title: $0, author: "", recent: 0) }
-        let cache = Cache(books: books, reading: [
-            "done": ReadingProgress(percent: 100, seconds: 100, synced: Date()),
-            "started": ReadingProgress(percent: 1, seconds: 10, synced: Date())
-        ])
-        XCTAssertEqual(cache.finishedBooks.map(\.id), ["done"])
+    func testLegacyCacheMigration() throws {
+        let legacy = Data(#"{"books":[],"details":{"old":{"progress":100,"seconds":61,"notes":[],"synced":0}},"reading":{"old":{"percent":100,"synced":0}}}"#.utf8)
+        let cache = try JSONDecoder().decode(Cache.self, from: legacy)
+        XCTAssertEqual(cache.details["old"]?.notes.count, 0)
+        XCTAssertNil(cache.details["old"]?.stamp)
+        XCTAssertEqual(cache.details["old"]?.progress, 100)
+        XCTAssertEqual(cache.reading?["old"]?.percent, 100)
     }
     func testArticleAndChapterIdentityGrouping() {
         let bookID = "MP_WXS_test"
@@ -92,7 +88,7 @@ final class SyncTests: XCTestCase {
                 data = collected
             }
             let body = try JSONSerialization.jsonObject(with: data!) as! Object
-            XCTAssertEqual(body["skill_version"] as? String, "1.0.4")
+            XCTAssertEqual(body["skill_version"] as? String, "1.0.5")
             XCTAssertNil(body["params"])
             return try handler(body)
         }
@@ -100,11 +96,9 @@ final class SyncTests: XCTestCase {
         config.protocolClasses = [MockProtocol.self]
         return WeReadClient(key: "synthetic", configuration: config)
     }
-    func testLibraryPaginatesAndIncludesBooksWithoutNotes() async throws {
+    func testLibraryPaginatesNotebooks() async throws {
         let api = client { body in
-            if body["api_name"] as? String == "/shelf/sync" {
-                return ["books": [["bookId": "shelf", "title": "Shelf only"]]]
-            }
+            XCTAssertEqual(body["api_name"] as? String, "/user/notebooks")
             if body["lastSort"] == nil {
                 return ["books": [["bookId": "a", "book": ["title": "A"], "sort": 20]], "hasMore": 1]
             }
@@ -112,14 +106,14 @@ final class SyncTests: XCTestCase {
             return ["books": [["bookId": "b", "book": ["title": "B"], "sort": 10]], "hasMore": 0]
         }
         let books = try await api.library()
-        XCTAssertEqual(Set(books.map(\.id)), Set(["a", "b", "shelf"]))
+        XCTAssertEqual(Set(books.map(\.id)), Set(["a", "b"]))
     }
     func testRepeatedCursorStopsSync() async {
         let api = client { _ in ["books": [["bookId": "a", "book": ["title": "A"], "sort": 20]], "hasMore": 1] }
         do { _ = try await api.library(); XCTFail("Must reject repeated pagination") }
         catch { XCTAssertTrue(displayError(error).contains("分页")) }
     }
-    func testNotesPaginationIndependentThoughtAndOnePercentProgress() async throws {
+    func testNotesPaginationAndIndependentThought() async throws {
         let api = client { body in
             switch body["api_name"] as? String {
             case "/book/bookmarklist": return ["updated": [["bookmarkId": "h", "markText": "original\ntext"]]]
@@ -130,16 +124,11 @@ final class SyncTests: XCTestCase {
                     return ["reviews": [["review": ["reviewId": "r1", "content": "whole book thought"]]], "totalCount": 2, "hasMore": 1, "synckey": 99]
                 }
                 return ["reviews": [["review": ["reviewId": "r2", "content": "another thought", "abstract": "quote"]]], "totalCount": 2, "hasMore": 0]
-            case "/book/getprogress": return ["book": ["progress": 1, "recordReadingTime": 61]]
             default: throw AppError("Unexpected operation")
             }
         }
         let book = Book(id: "a", title: "A", author: "", highlights: 1, thoughts: 2, recent: 0)
         let detail = try await api.detail(book)
-        XCTAssertNil(detail.progress)
-        let progress = try await api.progress(book)
-        XCTAssertEqual(progress.percent, 1)
-        XCTAssertEqual(progress.seconds, 61)
         XCTAssertEqual(detail.notes.count, 3)
         XCTAssertEqual(detail.notes.first(where: { $0.id == "thought:r1" })?.quote, "")
     }
@@ -149,7 +138,7 @@ final class SyncTests: XCTestCase {
             XCTAssertEqual(body["api_name"] as? String, "/user/notebooks")
             return ["books": [], "hasMore": 0]
         }
-        let books = try await api.library(includeShelf: false)
+        let books = try await api.library()
         XCTAssertEqual(books.count, 0)
     }
     func testOfficialArticleTitleSharedAcrossHighlightAndThought() async throws {
@@ -180,40 +169,230 @@ final class SyncTests: XCTestCase {
     }
 }
 
-final class QueryTests: XCTestCase {
-    func testArticleTitleParsingAndCacheFallback() async throws {
-        XCTAssertEqual(ArticleTitles.parse("<meta content='标题 &amp; &#x4e2d;文 &quot;引用&quot;' property='og:title'>"), "标题 & 中文 \"引用\"")
-        XCTAssertNil(ArticleTitles.parse("<html><title>环境异常</title></html>"))
-        XCTAssertEqual(ArticleTitles.publicURL("abc~def")?.absoluteString, "https://mp.weixin.qq.com/s/abc_def")
-        let note = Note(id: "h", kind: "划线", quote: "原文", chapter: "文章 abc", created: nil, sectionID: "abc")
-        let detail = BookDetail(notes: [note], synced: Date())
-        var calls = 0
-        let enriched = try await ArticleTitles.enrich(detail, previous: nil) { id in
-            calls += 1; XCTAssertEqual(id, "abc"); return "真实文章标题"
-        }
-        XCTAssertEqual(enriched.notes.first?.chapter, "真实文章标题")
-        XCTAssertEqual(calls, 1)
-        let cached = try await ArticleTitles.enrich(detail, previous: enriched) { _ in XCTFail("Cached title must not require network"); return nil }
-        XCTAssertEqual(cached.notes.first?.chapter, "真实文章标题")
-        let failed = try await ArticleTitles.enrich(detail, previous: nil) { _ in nil }
-        XCTAssertEqual(failed.notes.first?.chapter, "文章（标题暂缺）")
-        XCTAssertEqual(failed.notes.first?.quote, "原文")
+final class BookmarkTests: XCTestCase {
+func testArticleTitleParsingAndCacheFallback() async throws {
+    XCTAssertEqual(ArticleTitles.parse("<meta content='标题 &amp; &#x4e2d;文 &quot;引用&quot;' property='og:title'>"), "标题 & 中文 \"引用\"")
+    XCTAssertNil(ArticleTitles.parse("<html><title>环境异常</title></html>"))
+    XCTAssertEqual(ArticleTitles.publicURL("abc~def")?.absoluteString, "https://mp.weixin.qq.com/s/abc_def")
+    let note = Note(id: "h", kind: "划线", quote: "原文", chapter: "文章 abc", created: nil, sectionID: "abc")
+    let detail = BookDetail(notes: [note], synced: Date())
+    var calls = 0
+    let enriched = try await ArticleTitles.enrich(detail, previous: nil) { id in
+        calls += 1; XCTAssertEqual(id, "abc"); return "真实文章标题"
     }
+    XCTAssertEqual(enriched.notes.first?.chapter, "真实文章标题")
+    XCTAssertEqual(calls, 1)
+    let cached = try await ArticleTitles.enrich(detail, previous: enriched) { _ in XCTFail("Cached title must not require network"); return nil }
+    XCTAssertEqual(cached.notes.first?.chapter, "真实文章标题")
+    let failed = try await ArticleTitles.enrich(detail, previous: nil) { _ in nil }
+    XCTAssertEqual(failed.notes.first?.chapter, "文章（标题暂缺）")
+    XCTAssertEqual(failed.notes.first?.quote, "原文")
+}
 
-    func testBookSortingAndUnavailableDuration() {
-        let books = ["a", "b", "c", "d"].map { Book(id: $0, title: $0, author: "", recent: 999) }
-        let cache = Cache(books: books, reading: [
-            "a": ReadingProgress(percent: 100, seconds: 0, synced: Date(), updatedAt: 10),
-            "b": ReadingProgress(percent: 25, seconds: 42, synced: Date(), updatedAt: 20),
-            "c": ReadingProgress(percent: 0, seconds: 0, synced: Date())
-        ])
-        XCTAssertEqual(cache.sortedBooks(by: .progressDescending).map(\.id), ["a", "b", "c", "d"])
-        XCTAssertEqual(cache.sortedBooks(by: .progressAscending).map(\.id), ["c", "b", "a", "d"])
-        XCTAssertEqual(BookSort.allCases.count, 2)
-        XCTAssertEqual(BookSort.restored("最近阅读"), .progressDescending)
-        XCTAssertEqual(BookSort.restored("阅读进度：从低到高"), .progressAscending)
-        XCTAssertNil(durationLabel(cache.reading!["a"]!))
-        XCTAssertNil(durationLabel(cache.reading!["c"]!))
-        XCTAssertEqual(durationLabel(cache.reading!["b"]!), "阅读时长 42 秒")
+func testCardProjectionAndMedia() throws {
+    let book = Book(id: "b", title: "山间来信", author: "作者", recent: 30)
+    let old = Note(id: "same", kind: "划线", quote: "<p>一段原文</p><img src='https://example.com/a.png'><p>第二段</p>", chapter: "第一章", created: 10)
+    let latest = Note(id: "new", kind: "想法", quote: "[图片]", thought: "记得慢下来", chapter: "第二章", created: 20)
+    let entry = NoteEntry(book: book, note: latest)
+    XCTAssertNil(entry.quoteText)
+    XCTAssertEqual(entry.thoughtText, "记得慢下来")
+    XCTAssertTrue(entry.matches("山间 慢下来"))
+    XCTAssertFalse(entry.matches("其他"))
+    XCTAssertTrue(entry.copyText.contains("第二章"))
+    XCTAssertTrue(entry.copyText.contains("我的想法"))
+    XCTAssertEqual(NoteText.readable(old.quote), "一段原文\n第二段")
+    XCTAssertNil(NoteText.readable("![图](https://example.com/a.png)"))
+    XCTAssertNil(NoteText.readable("https://example.com/a.jpg?width=300"))
+    XCTAssertNil(NoteText.readable("<img src='a'><video>x</video>"))
+    XCTAssertEqual(NoteText.readable("第一段\n\n第二段  with spaces"), "第一段\n\n第二段  with spaces")
+    XCTAssertEqual(NoteText.excerpt("短句", limit: 220), "短句")
+    XCTAssertEqual(NoteText.excerpt("完整文字", limit: 2), "完整…")
+    XCTAssertNil(NoteText.readable("https://mmbiz.qpic.cn/mmbiz_png/abc/0?wx_fmt=png"))
+    XCTAssertEqual(noteTimestamp("1700000000000"), 1700000000)
+    XCTAssertNil(noteTimestamp(0)); XCTAssertNil(noteTimestamp("nan"))
+    let other = Book(id: "c", title: "公众号", author: "", recent: 0)
+    let cache = Cache(books: [book, other], details: [
+        "b": BookDetail(notes: [old, latest], synced: Date()),
+        "c": BookDetail(notes: [Note(id: "same", kind: "划线", quote: "", chapter: "")], synced: Date())
+    ])
+    XCTAssertEqual(cache.allNotes.first?.note.id, "new")
+    XCTAssertEqual(Set(cache.allNotes.map(\.id)).count, 3)
+    XCTAssertEqual(cache.noteBooks.map(\.id), ["b", "c"])
+    let decoded = try JSONDecoder().decode(Cache.self, from: JSONEncoder().encode(cache))
+    XCTAssertEqual(decoded.allNotes.map(\.id), cache.allNotes.map(\.id))
+}
+
+func testIncrementalSyncPlan() {
+    let now = Date()
+    let book = Book(id: "a", title: "A", author: "", highlights: 1, thoughts: 0, recent: 100)
+    var cached = BookDetail(notes: [], synced: now, stamp: NotebookStamp(book))
+    XCTAssertFalse(SyncPlan.needsDetail(book, cached: cached, force: false, now: now))
+    XCTAssertTrue(SyncPlan.needsDetail(book, cached: cached, force: true, now: now))
+    XCTAssertTrue(SyncPlan.needsDetail(book, cached: nil, force: false, now: now))
+    XCTAssertTrue(SyncPlan.needsDetail(book, cached: cached, force: false, now: now.addingTimeInterval(86_401)))
+    var changed = book; changed.recent += 1
+    XCTAssertTrue(SyncPlan.needsDetail(changed, cached: cached, force: false, now: now))
+    changed = book; changed.highlights = 2
+    XCTAssertTrue(SyncPlan.needsDetail(changed, cached: cached, force: false, now: now))
+    changed = book; changed.thoughts = nil
+    XCTAssertTrue(SyncPlan.needsDetail(changed, cached: cached, force: false, now: now))
+    cached.stamp = nil
+    XCTAssertTrue(SyncPlan.needsDetail(book, cached: cached, force: false, now: now))
+}
+
+final class MemoryNotesAPI: NotesAPI {
+    var books: [Book]
+    var details: [String: BookDetail]
+    var failing: Set<String> = []
+    var requests: [String] = []
+    var cancelled = false
+    var failLibrary = false
+    init(books: [Book], details: [String: BookDetail]) { self.books = books; self.details = details }
+    func library() async throws -> [Book] {
+        if failLibrary { throw URLError(.notConnectedToInternet) }
+        return books
     }
+    func detail(_ book: Book) async throws -> BookDetail {
+        requests.append(book.id)
+        if cancelled { throw CancellationError() }
+        if failing.contains(book.id) { throw URLError(.timedOut) }
+        guard let detail = details[book.id] else { throw AppError("Missing test fixture") }
+        return detail
+    }
+}
+
+@MainActor func testIncrementalSyncAndRetry() async throws {
+    let books = ["a", "b"].map { Book(id: $0, title: $0, author: "", highlights: 1, thoughts: 0, recent: 100) }
+    let details = Dictionary(uniqueKeysWithValues: books.map { book in
+        (book.id, BookDetail(notes: [Note(id: "h", kind: "划线", quote: "original", chapter: "", created: 100)], synced: Date(), stamp: NotebookStamp(book)))
+    })
+    let api = MemoryNotesAPI(books: books, details: details)
+    var cache = Cache(), saves = 0
+    let first = try await NotebookSync.run(cache: cache, api: api, progress: { _ in }, save: { cache = $0; saves += 1 ; _ = $1 })
+    XCTAssertTrue(first.isEmpty); XCTAssertEqual(api.requests, ["a", "b"]); XCTAssertEqual(saves, 4)
+    XCTAssertTrue(cache.notesSynced != nil)
+    api.requests = []
+    _ = try await NotebookSync.run(cache: cache, api: api, progress: { _ in }, save: { cache = $0 ; _ = $1 })
+    XCTAssertTrue(api.requests.isEmpty)
+    api.books[1].recent = 200
+    api.failing = ["b"]
+    let synced = cache.notesSynced
+    let failures = try await NotebookSync.run(cache: cache, api: api, progress: { _ in }, save: { cache = $0 ; _ = $1 })
+    XCTAssertEqual(failures.count, 1); XCTAssertEqual(cache.notesSynced, synced)
+    XCTAssertEqual(cache.details["b"]?.stamp?.recent, 100)
+    XCTAssertEqual(cache.books.first(where: { $0.id == "b" })?.recent, 200)
+    api.requests = []; api.failing = []
+    _ = try await NotebookSync.run(cache: cache, api: api, progress: { _ in }, save: { cache = $0 ; _ = $1 })
+    XCTAssertEqual(api.requests, ["b"])
+    XCTAssertEqual(cache.details["b"]?.stamp?.recent, 200)
+    api.requests = []
+    _ = try await NotebookSync.run(cache: cache, api: api, force: true, progress: { _ in }, save: { cache = $0 ; _ = $1 })
+    XCTAssertEqual(api.requests, ["a", "b"])
+}
+
+@MainActor func testDeletionReconciliationAndOfflineSources() async throws {
+    let book = Book(id: "a", title: "A", author: "", highlights: 1, thoughts: 0, recent: 100)
+    let old = BookDetail(notes: [Note(id: "old", kind: "划线", quote: "old", chapter: "")], synced: Date(), stamp: NotebookStamp(book))
+    var deleted = book; deleted.highlights = 0
+    let api = MemoryNotesAPI(books: [deleted], details: ["a": BookDetail(notes: [], synced: Date())])
+    var cache = Cache(books: [book], details: ["a": old])
+    _ = try await NotebookSync.run(cache: cache, api: api, progress: { _ in }, save: { cache = $0 ; _ = $1 })
+    XCTAssertTrue(cache.allNotes.isEmpty)
+    XCTAssertTrue(cache.noteBooks.isEmpty)
+    cache = Cache(books: [book], details: ["a": old])
+    api.books[0].highlights = nil
+    let failures = try await NotebookSync.run(cache: cache, api: api, progress: { _ in }, save: { cache = $0 ; _ = $1 })
+    XCTAssertEqual(failures.count, 1); XCTAssertEqual(cache.allNotes.count, 1)
+    api.books = []
+    _ = try await NotebookSync.run(cache: cache, api: api, progress: { _ in }, save: { cache = $0 ; _ = $1 })
+    XCTAssertEqual(cache.allNotes.count, 1)
+    XCTAssertEqual(cache.books.first?.id, "a")
+}
+
+@MainActor func testSyncCancellationAndDiskFailure() async throws {
+    let book = Book(id: "a", title: "A", author: "", highlights: 0, thoughts: 0, recent: 1)
+    let api = MemoryNotesAPI(books: [book], details: ["a": BookDetail(notes: [], synced: Date())])
+    var cache = Cache()
+    api.cancelled = true
+    do {
+        _ = try await NotebookSync.run(cache: cache, api: api, progress: { _ in }, save: { cache = $0 ; _ = $1 })
+        XCTFail("Cancellation must escape")
+    } catch { XCTAssertTrue(error is CancellationError) }
+    XCTAssertNil(cache.notesSynced); XCTAssertNil(cache.details["a"])
+    api.cancelled = false
+    var saves = 0
+    do {
+        _ = try await NotebookSync.run(cache: cache, api: api, progress: { _ in }, save: { next, _ in
+            saves += 1
+            if saves == 2 { throw AppError("Disk full") }
+            cache = next
+        })
+        XCTFail("A failed disk write must abort")
+    } catch { XCTAssertEqual(displayError(error), "Disk full") }
+    XCTAssertNil(cache.details["a"])
+    api.failLibrary = true; saves = 0
+    do {
+        _ = try await NotebookSync.run(cache: cache, api: api, progress: { _ in }, save: { _, _ in saves += 1 })
+        XCTFail("Offline must retain cache")
+    } catch { XCTAssertEqual(saves, 0) }
+}
+
+func testAPIRejectsMalformedAndRepeatedReviews() async throws {
+    let suite = SyncTests()
+    let book = Book(id: "a", title: "A", author: "", recent: 0)
+    for scenario in 0..<3 {
+        let api = suite.client { body in
+            if body["api_name"] as? String == "/book/bookmarklist" {
+                if scenario == 0 { return ["updated": [["bookmarkId": "h"]]] }
+                return ["updated": []]
+            }
+            if scenario == 1 { return ["reviews": [], "hasMore": 1, "synckey": 0] }
+            return ["reviews": [["review": ["reviewId": "same", "content": "a"]], ["review": ["reviewId": "same", "content": "b"]]], "hasMore": 0]
+        }
+        do { _ = try await api.detail(book); XCTFail("Must reject incomplete or repeated records") }
+        catch { XCTAssertTrue(error is AppError) }
+    }
+}
+
+@MainActor func testArticleContentAppearsBeforeMetadataAndRetries() async throws {
+    let book = Book(id: "MP_WXS_test", title: "公众号", author: "", highlights: 1, thoughts: 0, recent: 10)
+    let raw = BookDetail(notes: [Note(id: "h", kind: "划线", quote: "原文", chapter: "", created: 10, sectionID: "article")], synced: Date())
+    let api = MemoryNotesAPI(books: [book], details: [book.id: raw])
+    var cache = Cache()
+    do {
+        _ = try await NotebookSync.run(cache: cache, api: api, enrich: { _, _ in
+            XCTAssertEqual(cache.allNotes.count, 1)
+            XCTAssertNil(cache.details[book.id]?.stamp)
+            throw CancellationError()
+        }, progress: { _ in }, save: { cache = $0 ; _ = $1 })
+        XCTFail("Interrupted metadata must retry")
+    } catch { XCTAssertTrue(error is CancellationError) }
+    XCTAssertTrue(SyncPlan.needsDetail(book, cached: cache.details[book.id], force: false))
+    _ = try await NotebookSync.run(cache: cache, api: api, enrich: { detail, _ in
+        var enriched = detail; enriched.notes[0].chapter = "真实标题"; return enriched
+    }, progress: { _ in }, save: { cache = $0 ; _ = $1 })
+    XCTAssertEqual(cache.allNotes.first?.chapterTitle, "真实标题")
+    XCTAssertEqual(cache.details[book.id]?.stamp, NotebookStamp(book))
+}
+
+actor LookupCounter {
+    var running = 0, peak = 0, total = 0
+    func start() { running += 1; total += 1; peak = max(peak, running) }
+    func end() { running -= 1 }
+    func result() -> (Int, Int) { (peak, total) }
+}
+func testArticleMetadataConcurrencyIsBounded() async throws {
+    let counter = LookupCounter()
+    let notes = (0..<11).map { Note(id: "h:\($0)", kind: "划线", quote: "原文", chapter: "", sectionID: "article\($0)") }
+    let enriched = try await ArticleTitles.enrich(BookDetail(notes: notes, synced: Date()), previous: nil) { id in
+        await counter.start()
+        try? await Task.sleep(for: .milliseconds(10))
+        await counter.end()
+        return "标题 " + id
+    }
+    let (peak, total) = await counter.result()
+    XCTAssertTrue(peak <= 4); XCTAssertTrue(peak > 1); XCTAssertEqual(total, 11)
+    XCTAssertTrue(enriched.notes.allSatisfy { $0.chapter.hasPrefix("标题 article") })
+}
+
 }

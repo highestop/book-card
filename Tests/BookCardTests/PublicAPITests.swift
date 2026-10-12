@@ -4,20 +4,17 @@ import BookCardCore
 
 // Import the package as an app does, without granting access to its internals.
 final class PublicAPITests: XCTestCase {
-    func testReadingSearchAndSortKeepUnknownProgressAndExcludeOfficialAccounts() {
-        let cache = Cache(books: [
-            Book(id: "a", title: "Alpha", author: "AUTHOR"),
-            Book(id: "b", title: "Beta", author: "Author"),
-            Book(id: "c", title: "Unknown", author: "Author"),
-            Book(id: "MP_WXS_1", title: "公众号")
-        ], reading: [
-            "a": ReadingProgress(percent: 100, synced: Date()),
-            "b": ReadingProgress(percent: 5, synced: Date())
+    func testRecentBookmarkCardsAcrossSources() {
+        let book = Book(id: "a", title: "Alpha")
+        let official = Book(id: "MP_WXS_test", title: "公众号")
+        let cache = Cache(books: [book, official], details: [
+            book.id: BookDetail(notes: [Note(id: "a", kind: "划线", quote: "Quote", created: 10)], synced: Date()),
+            official.id: BookDetail(notes: [Note(id: "b", kind: "想法", quote: "[图片]", thought: "Idea", chapter: "Article", created: 20)], synced: Date())
         ])
-        XCTAssertEqual(cache.readingBooks(search: "author", sort: .progressAscending).map(\.id), ["b", "a", "c"])
-        XCTAssertEqual(cache.readingBooks(search: "ALPHA").map(\.id), ["a"])
-        XCTAssertEqual(cache.bookCount, 3)
-        XCTAssertEqual(cache.finishedBooks.map(\.id), ["a"])
+        XCTAssertEqual(cache.noteBooks.map(\.id), [official.id, book.id])
+        XCTAssertEqual(cache.allNotes.first?.thoughtText, "Idea")
+        XCTAssertNil(cache.allNotes.first?.quoteText)
+        XCTAssertTrue(cache.allNotes.first!.matches("公众号 Idea"))
     }
 
     func testNoteSourcesIncludeOldCachedNotesWhenUpstreamCountsAreMissing() {

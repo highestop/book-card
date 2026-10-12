@@ -153,7 +153,7 @@ import XCTest
         for profile in [first, second, brokenProfile] { try assertEqual(store.read(profile), Cache()) }
         XCTAssertFalse(FileManager.default.fileExists(atPath: broken.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: unrelated.path))
-        let schema = Schema(versionedSchema: LibrarySchemaV1.self)
+        let schema = Schema(versionedSchema: LibrarySchemaV2.self)
         let configuration = ModelConfiguration(schema: schema, url: directory.appendingPathComponent(first + ".store"), cloudKitDatabase: .none)
         let inspection = ModelContext(try ModelContainer(for: schema, migrationPlan: LibraryMigrationPlan.self, configurations: [configuration]))
         XCTAssertEqual(try inspection.fetchCount(FetchDescriptor<LibrarySchemaV1.Annotation>()), 0)
@@ -167,4 +167,46 @@ import XCTest
         let store = try SwiftDataStore(directory: directory)
         XCTAssertThrowsError(try store.read("../outside"))
     }
+    func testV1DatabaseMigratesAndPersistsNotebookStamp() async throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appendingPathComponent(first + ".store")
+        do {
+            let schema = Schema(versionedSchema: LibrarySchemaV1.self)
+            let config = ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
+            let container = try ModelContainer(for: schema, configurations: [config])
+            let context = ModelContext(container)
+            let source = LibrarySchemaV1.Source(id: "legacy")
+            source.update(Book(id: "legacy", title: "Old book", highlights: 1, thoughts: 0, recent: 50), position: 0)
+            context.insert(source)
+            let detail = LibrarySchemaV1.Detail(synced: date)
+            context.insert(detail); source.detail = detail
+            let note = LibrarySchemaV1.Annotation(Note(id: "old", kind: "划线", quote: "Keep this original"), sourceID: "legacy", position: 0)
+            context.insert(note); detail.notes = [note]
+            let state = LibrarySchemaV1.SyncState(); state.legacyMigrationComplete = true
+            context.insert(state); try context.save()
+        }
+        let store = try SwiftDataStore(directory: directory)
+        var cache = try store.read(first)
+        XCTAssertEqual(cache.allNotes.first?.note.quote, "Keep this original")
+        XCTAssertNil(cache.details["legacy"]?.stamp)
+        let stamp = NotebookStamp(cache.books[0])
+        cache.details["legacy"]?.stamp = stamp
+        try store.write(cache, profile: first, update: .detail("legacy"))
+        let reopened = try SwiftDataStore(directory: directory)
+        XCTAssertEqual(try reopened.read(first).details["legacy"]?.stamp, stamp)
+        cache.details["legacy"]?.stamp = nil
+        try store.write(cache, profile: first, update: .detail("legacy"))
+        XCTAssertNil(try SwiftDataStore(directory: directory).read(first).details["legacy"]?.stamp)
+        cache.details["legacy"]?.stamp = stamp
+        try store.write(cache, profile: first, update: .detail("legacy"))
+        try store.deleteAll()
+        XCTAssertTrue(try store.read(first).allNotes.isEmpty)
+        let schema = Schema(versionedSchema: LibrarySchemaV2.self)
+        let config = ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
+        let context = ModelContext(try ModelContainer(for: schema, migrationPlan: LibraryMigrationPlan.self, configurations: [config]))
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<LibrarySchemaV2.NotebookState>()), 0)
+    }
+
 }

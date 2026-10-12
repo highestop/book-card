@@ -106,7 +106,30 @@ enum LibrarySchemaV1: VersionedSchema {
     }
 }
 
+// Keep V1 unchanged so existing databases can migrate without rewriting notes.
+enum LibrarySchemaV2: VersionedSchema {
+    static var versionIdentifier: Schema.Version { Schema.Version(2, 0, 0) }
+    static var models: [any PersistentModel.Type] { LibrarySchemaV1.models + [NotebookState.self] }
+
+    @Model final class NotebookState {
+        @Attribute(.unique) var sourceID: String
+        var recent: Int
+        var highlights: Int?
+        var thoughts: Int?
+        init(sourceID: String, stamp: NotebookStamp) {
+            self.sourceID = sourceID; recent = stamp.recent
+            highlights = stamp.highlights; thoughts = stamp.thoughts
+        }
+        var value: NotebookStamp {
+            NotebookStamp(Book(id: sourceID, title: "", highlights: highlights, thoughts: thoughts, recent: recent))
+        }
+        func update(_ stamp: NotebookStamp) {
+            recent = stamp.recent; highlights = stamp.highlights; thoughts = stamp.thoughts
+        }
+    }
+}
+
 enum LibraryMigrationPlan: SchemaMigrationPlan {
-    static var schemas: [any VersionedSchema.Type] { [LibrarySchemaV1.self] }
-    static var stages: [MigrationStage] { [] }
+    static var schemas: [any VersionedSchema.Type] { [LibrarySchemaV1.self, LibrarySchemaV2.self] }
+    static var stages: [MigrationStage] { [.lightweight(fromVersion: LibrarySchemaV1.self, toVersion: LibrarySchemaV2.self)] }
 }

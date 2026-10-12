@@ -55,7 +55,7 @@ final class WeReadClient {
         try Task.checkCancellation()
         var body = parameters
         body["api_name"] = operation
-        body["skill_version"] = "1.0.4"
+        body["skill_version"] = "1.0.5"
         var request = URLRequest(url: URL(string: "https://i.weread.qq.com/api/agent/gateway")!)
         request.httpMethod = "POST"
         request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
@@ -69,7 +69,7 @@ final class WeReadClient {
         _ = try rows(page, "books")
         guard integer(page["hasMore"]) != nil else { throw AppError("Key 验证失败：接口响应不完整。") }
     }
-    func library(includeShelf: Bool = true) async throws -> [Book] {
+    func library() async throws -> [Book] {
         var notebooks: [Book] = [], cursors = Set<String>(), cursor: Any?
         var completed = false
         for _ in 0..<1000 {
@@ -87,15 +87,7 @@ final class WeReadClient {
             cursor = next
         }
         guard completed, Set(notebooks.map(\.id)).count == notebooks.count else { throw AppError("笔记本列表不完整或有重复，保留本地数据。") }
-        if !includeShelf { return notebooks }
-        let shelf = try await call("/shelf/sync")
-        var books = Dictionary(uniqueKeysWithValues: notebooks.map { ($0.id, $0) })
-        for item in try rows(shelf, "books") {
-            let id = try required(item, "bookId")
-            if var book = books[id] { book.recent = max(book.recent, integer(item["readUpdateTime"]) ?? 0); books[id] = book }
-            else { books[id] = Book(id: id, title: try required(item, "title"), author: string(item["author"]) ?? "", highlights: nil, thoughts: nil, recent: integer(item["readUpdateTime"]) ?? 0) }
-        }
-        return books.values.sorted { $0.recent == $1.recent ? $0.title < $1.title : $0.recent > $1.recent }
+        return notebooks.sorted { $0.recent == $1.recent ? $0.id < $1.id : $0.recent > $1.recent }
     }
     func detail(_ book: Book) async throws -> BookDetail {
         let marks = try await call("/book/bookmarklist", ["bookId": book.id])
@@ -107,7 +99,7 @@ final class WeReadClient {
         var notes: [Note] = []
         for mark in try rows(marks, "updated") {
             guard let quote = mark["markText"] as? String else { throw AppError("划线原文缺失。") }
-            notes.append(Note(id: "highlight:" + (try required(mark, "bookmarkId")), kind: "划线", quote: quote, thought: nil, chapter: chapters[string(mark["chapterUid"]) ?? ""] ?? "", created: (mark["createTime"] as? NSNumber)?.doubleValue, sectionID: book.official ? articleID(bookID: book.id, record: mark, thought: false) : string(mark["chapterUid"]), sectionOrder: chapterOrders[string(mark["chapterUid"]) ?? ""]))
+            notes.append(Note(id: "highlight:" + (try required(mark, "bookmarkId")), kind: "划线", quote: quote, thought: nil, chapter: chapters[string(mark["chapterUid"]) ?? ""] ?? "", created: noteTimestamp(mark["createTime"]), sectionID: book.official ? articleID(bookID: book.id, record: mark, thought: false) : string(mark["chapterUid"]), sectionOrder: chapterOrders[string(mark["chapterUid"]) ?? ""]))
         }
         let highlightCount = notes.count
         var cursor: Any = 0, cursors: Set<String> = ["0"], completed = false, total: Int?
@@ -117,7 +109,7 @@ final class WeReadClient {
             for wrapper in try rows(page, "reviews") {
                 guard let review = wrapper["review"] as? Object, let content = review["content"] as? String else { throw AppError("想法内容不完整。") }
                 let article = review["refMpInfo"] as? Object
-                notes.append(Note(id: "thought:" + (try required(review, "reviewId")), kind: "想法", quote: review["abstract"] as? String ?? "", thought: content, chapter: article?["title"] as? String ?? review["chapterName"] as? String ?? chapters[string(review["chapterUid"]) ?? ""] ?? "", created: (review["createTime"] as? NSNumber)?.doubleValue, sectionID: book.official ? articleID(bookID: book.id, record: review, thought: true) : string(review["chapterUid"]), sectionOrder: integer(review["chapterIdx"]) ?? chapterOrders[string(review["chapterUid"]) ?? ""]))
+                notes.append(Note(id: "thought:" + (try required(review, "reviewId")), kind: "想法", quote: review["abstract"] as? String ?? "", thought: content, chapter: article?["title"] as? String ?? review["chapterName"] as? String ?? chapters[string(review["chapterUid"]) ?? ""] ?? "", created: noteTimestamp(review["createTime"]), sectionID: book.official ? articleID(bookID: book.id, record: review, thought: true) : string(review["chapterUid"]), sectionOrder: integer(review["chapterIdx"]) ?? chapterOrders[string(review["chapterUid"]) ?? ""]))
             }
             guard let more = integer(page["hasMore"]), [0, 1].contains(more) else { throw AppError("想法分页信息不完整。") }
             if more == 0 { completed = true; break }
@@ -135,16 +127,7 @@ final class WeReadClient {
                 if let id = notes[index].sectionID { notes[index].chapter = titles[id] ?? "文章 \(id)" }
             }
         }
-        return BookDetail(notes: notes.sorted { ($0.created ?? 0) > ($1.created ?? 0) }, synced: Date())
-    }
-    func progress(_ book: Book) async throws -> ReadingProgress {
-        let response = try await call("/book/getprogress", ["bookId": book.id])
-        guard let progress = response["book"] as? Object,
-              let percent = integer(progress["progress"]), (0...100).contains(percent) else {
-            throw AppError("接口暂未提供有效阅读进度。")
-        }
-        return ReadingProgress(percent: percent, seconds: integer(progress["recordReadingTime"]),
-            finishedAt: (progress["finishTime"] as? NSNumber)?.doubleValue, synced: Date(), updatedAt: (progress["updateTime"] as? NSNumber)?.doubleValue)
+        return BookDetail(notes: notes.sorted { ($0.created ?? 0) > ($1.created ?? 0) }, synced: Date(), stamp: NotebookStamp(book))
     }
 
 }
